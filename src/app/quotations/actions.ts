@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { createQuotation } from "@/lib/quotations";
+import { createQuotation, updateQuotation } from "@/lib/quotations";
 import { normalisePhone, str, uniqueFieldError } from "@/lib/validation";
 import type { QuotationPayload, SaveResult } from "./types";
 
@@ -49,6 +49,23 @@ export async function saveQuotation(payload: QuotationPayload): Promise<SaveResu
 
   if (result.ok) {
     revalidatePath("/quotations");
+    revalidatePath("/items");
+    revalidatePath("/stock");
+  }
+
+  return result;
+}
+
+/** Re-save an existing quotation over the same record. */
+export async function reviseQuotation(
+  id: number,
+  payload: QuotationPayload,
+): Promise<SaveResult> {
+  const result = await updateQuotation(id, payload);
+
+  if (result.ok) {
+    revalidatePath("/quotations");
+    revalidatePath(`/quotations/${id}`);
     revalidatePath("/items");
     revalidatePath("/stock");
   }

@@ -89,6 +89,23 @@ export async function nextQuoteNo(
   return formatDocNo(settings.quotePrefix, allocated, settings.quoteNumberPadding);
 }
 
+/** Same allocation, for invoices. See nextQuoteNo for why it runs in the tx. */
+export async function nextInvoiceNo(
+  tx: Pick<typeof prisma, "settings">,
+): Promise<string> {
+  const settings = await tx.settings.update({
+    where: { id: SETTINGS_ID },
+    data: { invoiceNextNumber: { increment: 1 } },
+  });
+
+  const allocated = settings.invoiceNextNumber - 1;
+  return formatDocNo(
+    settings.invoicePrefix,
+    allocated,
+    settings.invoiceNumberPadding,
+  );
+}
+
 export function formatDocNo(prefix: string, n: number, padding: number): string {
   return `${prefix}${String(n).padStart(padding, "0")}`;
 }

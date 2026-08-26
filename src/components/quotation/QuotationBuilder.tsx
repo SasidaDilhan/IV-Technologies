@@ -3,14 +3,14 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import { saveQuotation } from "@/app/quotations/actions";
+import { reviseQuotation, saveQuotation } from "@/app/quotations/actions";
 import type { DraftLinePayload } from "@/app/quotations/types";
 import { discountAmount, formatLKR, parseDiscountInput } from "@/lib/money";
 import ScanBar, { type AddedLine } from "./ScanBar";
 import CustomerPanel, { type SelectedCustomer } from "./CustomerPanel";
 import TermsDialog from "./TermsDialog";
 
-interface DraftLine {
+export interface DraftLine {
   key: string;
   itemId: number;
   itemCode: string;
@@ -25,10 +25,25 @@ interface DraftLine {
   note: string;
 }
 
+/** An existing quotation loaded back into the till for editing. */
+export interface InitialQuotation {
+  id: number;
+  quoteNo: string;
+  customer: SelectedCustomer;
+  issueDate: string;
+  validUntil: string;
+  billDiscountType: "fixed" | "percent";
+  billDiscountValue: string;
+  terms: string;
+  lines: DraftLine[];
+}
+
 interface Props {
   defaultTerms: string;
   today: string;
   validUntil: string;
+  /** Present when reopening an existing quotation. */
+  initial?: InitialQuotation;
 }
 
 const cell =
@@ -46,15 +61,28 @@ function lineCents(line: DraftLine): number | null {
   return gross - discountAmount(gross, disc.type, disc.value);
 }
 
-export default function QuotationBuilder({ defaultTerms, today, validUntil }: Props) {
+export default function QuotationBuilder({
+  defaultTerms,
+  today,
+  validUntil,
+  initial,
+}: Props) {
   const router = useRouter();
-  const [customer, setCustomer] = useState<SelectedCustomer | null>(null);
-  const [lines, setLines] = useState<DraftLine[]>([]);
-  const [issueDate, setIssueDate] = useState(today);
-  const [validUntilDate, setValidUntilDate] = useState(validUntil);
-  const [billDiscountType, setBillDiscountType] = useState<"fixed" | "percent">("fixed");
-  const [billDiscountValue, setBillDiscountValue] = useState("");
-  const [terms, setTerms] = useState(defaultTerms);
+  const [customer, setCustomer] = useState<SelectedCustomer | null>(
+    initial?.customer ?? null,
+  );
+  const [lines, setLines] = useState<DraftLine[]>(initial?.lines ?? []);
+  const [issueDate, setIssueDate] = useState(initial?.issueDate ?? today);
+  const [validUntilDate, setValidUntilDate] = useState(
+    initial?.validUntil ?? validUntil,
+  );
+  const [billDiscountType, setBillDiscountType] = useState<"fixed" | "percent">(
+    initial?.billDiscountType ?? "fixed",
+  );
+  const [billDiscountValue, setBillDiscountValue] = useState(
+    initial?.billDiscountValue ?? "",
+  );
+  const [terms, setTerms] = useState(initial?.terms ?? defaultTerms);
   const [termsOpen, setTermsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
@@ -166,7 +194,9 @@ export default function QuotationBuilder({ defaultTerms, today, validUntil }: Pr
     }
 
     startSave(async () => {
-      const result = await saveQuotation(payload);
+      const result = initial
+        ? await reviseQuotation(initial.id, payload)
+        : await saveQuotation(payload);
       if (!result.ok) {
         setError(result.error ?? "Could not save.");
         return;
@@ -180,7 +210,11 @@ export default function QuotationBuilder({ defaultTerms, today, validUntil }: Pr
     <div className="flex h-full">
       {/* ---------------- left: entry + lines ---------------- */}
       <section className="flex min-w-0 flex-1 flex-col p-4">
-        <ScanBar onAdd={addLine} usedSerialIds={usedSerialIds} />
+        <ScanBar
+          onAdd={addLine}
+          usedSerialIds={usedSerialIds}
+          quotationId={initial?.id}
+        />
 
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
           <div className="grid shrink-0 grid-cols-[1fr_7rem_5rem_8rem_7rem_2rem] gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900">
@@ -415,7 +449,7 @@ export default function QuotationBuilder({ defaultTerms, today, validUntil }: Pr
               disabled={saving || totals.invalid}
               className="rounded-md border border-slate-300 px-3 py-2.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
             >
-              {saving ? "Saving..." : "Save draft"}
+              {saving ? "Saving..." : initial ? "Save changes" : "Save draft"}
             </button>
             <button
               type="button"

@@ -135,3 +135,120 @@ export async function createQuotation(
     };
   }
 }
+
+/**
+ * Re-save an existing quotation over the same record.
+ *
+ * The lines are replaced wholesale rather than diffed: a bill is small, and
+ * deleting the QuoteLines releases their serial reservations automatically
+ * (SerialUnit.quoteLineId is onDelete: SetNull), so the claim logic below is
+ * identical to a first save. The quote number never changes.
+ */
+export async function updateQuotation(
+  id: number,
+  payload: QuotationPayload,
+): Promise<CreateResult> {
+  if (!payload.customerId) return { ok: false, error: "Select a customer first." };
+  if (payload.lines.length === 0) return { ok: false, error: "Add at least one item." };
+
+  let issueDate: Date;
+  let validUntil: Date;
+  try {
+    issueDate = parseDate(payload.issueDate, "Issue date");
+    validUntil = parseDate(payload.validUntil, "Valid until");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  if (validUntil < issueDate) {
+    return { ok: false, error: "Valid until cannot be before the issue date." };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.quotation.findUnique({
+        where: { id },
+        include: { invoice: true },
+      });
+      if (!existing) throw new Error("That quotation no longer exists.");
+      if (existing.invoice) {
+        throw new Error(
+          `This quotation was already invoiced as ${existing.invoice.invoiceNo} ` +
+            `and can no longer be edited.`,
+        );
+      }
+
+      // Releases the old serial reservations via onDelete: SetNull.
+      await tx.quoteLine.deleteMany({ where: { quotationId: id } });
+
+      await tx.quotation.update({
+        where: { id },
+        data: {
+          customerId: payload.customerId,
+          issueDate,
+          validUntil,
+          billDiscountType: payload.billDiscountType,
+          billDiscountValue: payload.billDiscountValue,
+          termsText: payload.termsText,
+        },
+      });
+
+      for (let i = 0; i < payload.lines.length; i++) {
+        const line = payload.lines[i];
+        const item = await tx.item.findUnique({ where: { id: line.itemId } });
+        if (!item) throw new Error(`Item ${line.itemId} no longer exists.`);
+
+        const quantity = item.tracksSerials ? line.serialIds.length : line.quantity;
+        if (item.tracksSerials && quantity === 0) {
+          throw new Error(`Select at least one serial number for ${item.itemCode}.`);
+        }
+        if (quantity <= 0) {
+          throw new Error(`Quantity for ${item.itemCode} must be at least 1.`);
+        }
+        if (line.unitPrice < 0) {
+          throw new Error(`Unit price for ${item.itemCode} cannot be negative.`);
+        }
+
+        const quoteLine = await tx.quoteLine.create({
+          data: {
+            quotationId: id,
+            itemId: item.id,
+            unitPrice: line.unitPrice,
+            quantity,
+            lineDiscountType: line.discountType,
+            lineDiscountValue: line.discountValue,
+            note: line.note || null,
+            sortOrder: i,
+          },
+        });
+
+        if (item.tracksSerials) {
+          const claimed = await tx.serialUnit.updateMany({
+            where: {
+              id: { in: line.serialIds },
+              itemId: item.id,
+              status: "in_stock",
+              quoteLineId: null,
+              invoiceLineId: null,
+            },
+            data: { quoteLineId: quoteLine.id },
+          });
+          if (claimed.count !== line.serialIds.length) {
+            throw new Error(
+              `Some serial numbers for ${item.itemCode} were taken by another ` +
+                `bill. Reopen the picker and choose again.`,
+            );
+          }
+        }
+      }
+
+      return { id, quoteNo: existing.quoteNo };
+    });
+
+    return { ok: true, quotationId: result.id, quoteNo: result.quoteNo };
+  } catch (error) {
+    return {
+      ok: false,
+      error: (error as Error).message ?? "Could not save the quotation.",
+    };
+  }
+}

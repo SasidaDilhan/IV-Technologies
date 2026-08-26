@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
 import { QuotationDocument } from "@/lib/pdf/QuotationDocument";
 
-// The PDF renderer needs Node APIs, not the edge runtime.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -21,38 +20,37 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   const id = Number(params.id);
-  if (!Number.isInteger(id)) {
-    return new Response("Bad quotation id", { status: 400 });
-  }
+  if (!Number.isInteger(id)) return new Response("Bad invoice id", { status: 400 });
 
-  const quotation = await prisma.quotation.findUnique({
+  const invoice = await prisma.invoice.findUnique({
     where: { id },
     include: {
       customer: true,
+      payments: { orderBy: { paidAt: "asc" } },
       lines: {
         orderBy: { sortOrder: "asc" },
         include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
       },
     },
   });
-
-  if (!quotation) return new Response("Quotation not found", { status: 404 });
+  if (!invoice) return new Response("Invoice not found", { status: 404 });
 
   const settings = await getSettings();
 
   const buffer = await renderToBuffer(
     QuotationDocument({
-      kind: "quotation",
-      quoteNo: quotation.quoteNo,
-      issueDate: formatDate(quotation.issueDate),
-      validUntil: formatDate(quotation.validUntil),
-      status: quotation.status,
+      kind: "invoice",
+      quoteNo: invoice.invoiceNo,
+      issueDate: formatDate(invoice.issueDate),
+      validUntil: "",
+      dueDate: invoice.dueDate ? formatDate(invoice.dueDate) : null,
+      status: invoice.status,
       customer: {
-        name: quotation.customer.name,
-        phone: quotation.customer.phone,
-        address: quotation.customer.address,
+        name: invoice.customer.name,
+        phone: invoice.customer.phone,
+        address: invoice.customer.address,
       },
-      lines: quotation.lines.map((line) => ({
+      lines: invoice.lines.map((line) => ({
         name: line.item.name,
         itemCode: line.item.itemCode,
         note: line.note,
@@ -62,9 +60,15 @@ export async function GET(
         lineDiscountType: line.lineDiscountType,
         lineDiscountValue: line.lineDiscountValue,
       })),
-      billDiscountType: quotation.billDiscountType,
-      billDiscountValue: quotation.billDiscountValue,
-      termsText: quotation.termsText,
+      billDiscountType: invoice.billDiscountType,
+      billDiscountValue: invoice.billDiscountValue,
+      termsText: invoice.termsText,
+      payments: invoice.payments.map((p) => ({
+        date: formatDate(p.paidAt),
+        method: p.method,
+        amount: p.amount,
+        reference: p.reference,
+      })),
       settings: {
         businessName: settings.businessName,
         addressLine1: settings.addressLine1,
@@ -82,8 +86,7 @@ export async function GET(
   return new Response(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
-      // inline so "Generate PDF" opens a preview tab rather than a silent download
-      "Content-Disposition": `inline; filename="Quotation-${quotation.quoteNo}.pdf"`,
+      "Content-Disposition": `inline; filename="Invoice-${invoice.invoiceNo}.pdf"`,
       "Cache-Control": "no-store",
     },
   });

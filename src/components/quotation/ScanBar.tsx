@@ -37,6 +37,11 @@ interface Props {
   onAdd: (line: AddedLine) => void;
   /** Serial ids already used by lines on this bill. */
   usedSerialIds: number[];
+  /**
+   * Set when editing an existing quotation, so its own reserved units stay
+   * selectable rather than reading as "reserved on another quotation".
+   */
+  quotationId?: number;
 }
 
 const field =
@@ -49,7 +54,8 @@ const field =
  * a scanned barcode, or a typed name / item code. Results overlay the line list
  * rather than pushing it down, so the layout never moves under the operator.
  */
-export default function ScanBar({ onAdd, usedSerialIds }: Props) {
+export default function ScanBar({ onAdd, usedSerialIds, quotationId }: Props) {
+  const scope = quotationId ? `&forQuotation=${quotationId}` : "";
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<ItemHit[]>([]);
   const [serialExact, setSerialExact] = useState<SerialHit | null>(null);
@@ -80,9 +86,12 @@ export default function ScanBar({ onAdd, usedSerialIds }: Props) {
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/items/search?q=${encodeURIComponent(query.trim())}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/items/search?q=${encodeURIComponent(query.trim())}${scope}`,
+          {
+            signal: controller.signal,
+          },
+        );
         const data = await res.json();
         setHits(data.items ?? []);
         setSerialExact(data.serial ?? null);
@@ -97,7 +106,7 @@ export default function ScanBar({ onAdd, usedSerialIds }: Props) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, scope]);
 
   function reset() {
     setQuery("");
@@ -135,7 +144,9 @@ export default function ScanBar({ onAdd, usedSerialIds }: Props) {
     setChecked(new Set());
     setLoadingSerials(true);
     try {
-      const res = await fetch(`/api/items/${item.id}/serials`);
+      const res = await fetch(
+        `/api/items/${item.id}/serials${quotationId ? `?forQuotation=${quotationId}` : ""}`,
+      );
       const data = await res.json();
       setSerials(data.serials ?? []);
     } finally {

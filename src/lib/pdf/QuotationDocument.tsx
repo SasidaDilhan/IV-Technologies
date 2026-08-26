@@ -42,10 +42,22 @@ export interface PdfSettings {
   logoDataUrl: string | null;
 }
 
+export interface PdfPayment {
+  date: string;
+  method: string;
+  amount: number;
+  reference: string | null;
+}
+
 export interface QuotationPdfProps {
+  /** Drives the title and the totals block; the rest of the layout is shared. */
+  kind: "quotation" | "invoice";
   quoteNo: string;
   issueDate: string;
+  /** Quotations only. */
   validUntil: string;
+  /** Invoices only; null when no due date was set. */
+  dueDate?: string | null;
   status: string;
   customer: { name: string; phone: string; address: string | null };
   lines: PdfLine[];
@@ -53,6 +65,8 @@ export interface QuotationPdfProps {
   billDiscountValue: number;
   termsText: string | null;
   settings: PdfSettings;
+  /** Invoices only. */
+  payments?: PdfPayment[];
 }
 
 const INK = "#1f2933";
@@ -214,6 +228,12 @@ export function QuotationDocument(props: QuotationPdfProps) {
       ? `Discount (${props.billDiscountValue / 100}%)`
       : "Discount";
 
+  const isInvoice = props.kind === "invoice";
+  const docTitle = isInvoice ? "INVOICE" : "ESTIMATE";
+  const numberLabel = isInvoice ? "INVOICE NUMBER" : "ESTIMATE NUMBER";
+  const paid = (props.payments ?? []).reduce((sum, p) => sum + p.amount, 0);
+  const balanceDue = total - paid;
+
   const businessLines = [
     [settings.addressLine1, settings.city].filter(Boolean).join(" "),
     settings.addressLine2,
@@ -236,14 +256,14 @@ export function QuotationDocument(props: QuotationPdfProps) {
 
   return (
     <Document
-      title={`Estimate ${props.quoteNo}`}
+      title={`${isInvoice ? "Invoice" : "Estimate"} ${props.quoteNo}`}
       author={settings.businessName}
-      subject={`Estimate for ${customer.name}`}
+      subject={`${isInvoice ? "Invoice" : "Estimate"} for ${customer.name}`}
     >
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
           <View style={{ width: "58%" }}>
-            <Text style={styles.title}>ESTIMATE</Text>
+            <Text style={styles.title}>{docTitle}</Text>
             <Text style={styles.businessName}>{settings.businessName}</Text>
             {businessLines.map((line, i) => (
               <Text key={i} style={styles.businessLine}>
@@ -270,7 +290,7 @@ export function QuotationDocument(props: QuotationPdfProps) {
           </View>
           <View style={{ width: "45%" }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={styles.label}>ESTIMATE NUMBER</Text>
+              <Text style={styles.label}>{numberLabel}</Text>
               <Text style={{ fontSize: 9 }}>{props.quoteNo}</Text>
             </View>
             <View
@@ -283,6 +303,18 @@ export function QuotationDocument(props: QuotationPdfProps) {
               <Text style={styles.label}>ISSUED</Text>
               <Text style={{ fontSize: 9 }}>{props.issueDate}</Text>
             </View>
+            {isInvoice && props.dueDate && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginTop: 12,
+                }}
+              >
+                <Text style={styles.label}>DUE</Text>
+                <Text style={{ fontSize: 9 }}>{props.dueDate}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -341,9 +373,26 @@ export function QuotationDocument(props: QuotationPdfProps) {
               <Text style={styles.totalValue}>({formatLKR(discount)})</Text>
             </View>
             <View style={styles.grandRow}>
-              <Text style={styles.grandLabel}>Grand total</Text>
+              <Text style={styles.grandLabel}>
+                {isInvoice ? "Total" : "Grand total"}
+              </Text>
               <Text style={styles.grandValue}>{formatLKR(total)}</Text>
             </View>
+
+            {isInvoice && (
+              <>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Received</Text>
+                  <Text style={styles.totalValue}>({formatLKR(paid)})</Text>
+                </View>
+                <View style={styles.grandRow}>
+                  <Text style={styles.grandLabel}>Balance due</Text>
+                  <Text style={styles.grandValue}>
+                    {formatLKR(Math.max(balanceDue, 0))}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
