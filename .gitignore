@@ -39,3 +39,9 @@ next-env.d.ts
 .env
 prisma/*.db
 prisma/*.db-journal
+
+# local database backups
+backups/
+
+# alternate build output used for verification
+.next-build/
