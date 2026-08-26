@@ -1,0 +1,314 @@
+// Prisma schema for the IV Technology CCTV billing system.
+//
+// CONVENTIONS
+//
+// Money  - every monetary field is an Int in CENTS (LKR x 100). SQLite has no
+//          true decimal type, and Prisma Decimal degrades to a float here,
+//          which silently loses precision on a bill. Integers cannot drift.
+//          Use the helpers in src/lib/money.ts to convert at the edges.
+//
+// Discounts - stored as a (type, value) pair rather than one ambiguous number:
+//          type "fixed"   -> value is CENTS off
+//          type "percent" -> value is BASIS POINTS (1000 = 10.00%)
+//          Basis points keep fractional percentages exact without a float.
+//
+// Status - plain String, not enum: SQLite does not support Prisma enums.
+//          Allowed values are documented per field, enforced in app code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Customer
+// ---------------------------------------------------------------------------
+
+/// Phone number is the business lookup key - staff search by phone, not name.
+model Customer {
+  id        Int      @id @default(autoincrement())
+  phone     String   @unique
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotations Quotation[]
+  invoices   Invoice[]
+
+  @@index([name])
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+/// A catalog entry, e.g. "DS-2CE1ODF0T-PFS".
+/// unitPrice here is the DEFAULT only - each bill line snapshots its own price,
+/// so changing the catalog never rewrites the history of an issued bill.
+model Item {
+  id        Int     @id @default(autoincrement())
+  itemCode  String  @unique
+  name      String
+  barcode   String? @unique
+  unitPrice Int
+
+  /// When true, quantity on a bill line is derived from linked SerialUnits
+  /// rather than typed in by hand.
+  tracksSerials Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  serialUnits  SerialUnit[]
+  quoteLines   QuoteLine[]
+  invoiceLines InvoiceLine[]
+
+  @@index([name])
+}
+
+/// One row per physical unit in stock. This is what makes
+/// "search a serial number, find the customer it was sold to" possible.
+model SerialUnit {
+  id           Int    @id @default(autoincrement())
+  serialNumber String @unique
+  itemId       Int
+
+  /// "in_stock" | "sold"
+  status String @default("in_stock")
+
+  /// Reserved against a quote line (quote not yet confirmed).
+  quoteLineId Int?
+
+  /// Sold on an invoice line. This is the link that answers "who owns this unit".
+  invoiceLineId Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  // A deleted bill line releases its units back to stock; it must never
+  // delete the physical-unit record itself.
+  quoteLine   QuoteLine?   @relation(fields: [quoteLineId], references: [id], onDelete: SetNull)
+  invoiceLine InvoiceLine? @relation(fields: [invoiceLineId], references: [id], onDelete: SetNull)
+
+  @@index([itemId])
+  @@index([status])
+  @@index([quoteLineId])
+  @@index([invoiceLineId])
+}
+
+// ---------------------------------------------------------------------------
+// Quotation (the estimate stage)
+// ---------------------------------------------------------------------------
+
+model Quotation {
+  id Int @id @default(autoincrement())
+
+  /// String, not Int - quote numbers carry leading zeros ("001253").
+  quoteNo    String @unique
+  customerId Int
+
+  /// Operator-set, not necessarily today's date.
+  issueDate DateTime
+
+  /// Application defaults this to issueDate + 14 days.
+  validUntil DateTime
+
+  /// "draft" | "sent" | "confirmed"
+  status String @default("draft")
+
+  /// "fixed" | "percent" - see CONVENTIONS at top of file.
+  billDiscountType  String @default("fixed")
+  billDiscountValue Int    @default(0)
+
+  /// Snapshot of the terms as printed on THIS quote, so later edits to the
+  /// company default terms never alter an already-issued document.
+  termsText String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines    QuoteLine[]
+
+  /// Set when this quote is confirmed into a bill.
+  invoice Invoice?
+
+  @@index([customerId])
+  @@index([status])
+  @@index([issueDate])
+}
+
+model QuoteLine {
+  id          Int @id @default(autoincrement())
+  quotationId Int
+  itemId      Int
+
+  /// Snapshot of the price agreed on this bill - editable per line,
+  /// independent of Item.unitPrice.
+  unitPrice Int
+
+  /// For serial-tracked items this must equal serialUnits.length;
+  /// the application keeps the two in step.
+  quantity Int @default(1)
+
+  /// "fixed" | "percent"
+  lineDiscountType  String @default("fixed")
+  lineDiscountValue Int    @default(0)
+
+  /// Free-text note printed under the line (e.g. install location).
+  note String?
+
+  /// Display order on the printed document.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  /// Populated only when item.tracksSerials.
+  serialUnits SerialUnit[]
+
+  @@index([quotationId])
+  @@index([itemId])
+}
+
+// ---------------------------------------------------------------------------
+// Invoice (the confirmed, billable job)
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id         Int    @id @default(autoincrement())
+  invoiceNo  String @unique
+  customerId Int
+
+  /// The quote this bill was confirmed from. Optional: a walk-in sale is
+  /// invoiced directly with no estimate stage.
+  quotationId Int? @unique
+
+  issueDate DateTime
+  dueDate   DateTime?
+
+  /// "draft" | "issued" | "cancelled" - settlement is derived from payments,
+  /// not stored here, so the two can never disagree.
+  status String @default("draft")
+
+  billDiscountType  String @default("fixed")
+  billDiscountValue Int    @default(0)
+
+  /// Amount taken up front at confirmation.
+  advanceAmount Int @default(0)
+
+  termsText String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer  Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quotation Quotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  lines     InvoiceLine[]
+  payments  Payment[]
+
+  // balanceDue is intentionally NOT a column. It is
+  //   lineTotals - billDiscount - advanceAmount - sum(payments)
+  // and is computed on read; a stored copy would go stale the moment a
+  // payment or a line changed.
+
+  @@index([customerId])
+  @@index([status])
+  @@index([issueDate])
+}
+
+model InvoiceLine {
+  id        Int @id @default(autoincrement())
+  invoiceId Int
+  itemId    Int
+
+  unitPrice Int
+  quantity  Int @default(1)
+
+  lineDiscountType  String @default("fixed")
+  lineDiscountValue Int    @default(0)
+
+  note      String?
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item    Item    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  serialUnits SerialUnit[]
+
+  @@index([invoiceId])
+  @@index([itemId])
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  invoiceId Int
+  amount    Int
+
+  /// "cash" | "card" | "bank_transfer" | "cheque"
+  method String
+
+  paidAt DateTime @default(now())
+
+  /// Cheque number, transfer reference, etc.
+  reference String?
+  note      String?
+
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([paidAt])
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+/// Single-row table (always id = 1) holding business identity, the default
+/// terms template, and document numbering counters.
+model Settings {
+  id Int @id @default(1)
+
+  businessName String  @default("IV Technology")
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  phone        String?
+  email        String?
+  website      String?
+  /// Business registration number, printed in the document footer.
+  regNo        String?
+
+  /// Logo as a data: URI. Stored inline so a deployment is one SQLite file
+  /// with no separate asset directory to lose.
+  logoDataUrl String?
+
+  /// Boilerplate loaded into every new quotation. Editing a quotation copies
+  /// this text into that document; it never writes back here.
+  defaultTerms String @default("")
+
+  quotePrefix        String @default("")
+  quoteNextNumber    Int    @default(1)
+  quoteNumberPadding Int    @default(6)
+
+  invoicePrefix        String @default("INV-")
+  invoiceNextNumber    Int    @default(1)
+  invoiceNumberPadding Int    @default(6)
+
+  updatedAt DateTime @updatedAt
+}
