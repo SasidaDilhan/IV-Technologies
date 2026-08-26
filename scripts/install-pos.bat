@@ -28,6 +28,15 @@ if errorlevel 1 (
 for /f "tokens=*" %%v in ('node -v') do echo   Node %%v found.
 echo.
 
+REM The .env file holds the database location. It is deliberately not shipped
+REM in the project files, so create it from the template on first setup -
+REM without it every database command fails with "DATABASE_URL not found".
+if not exist ".env" (
+  echo   Creating .env from .env.example...
+  copy /y ".env.example" ".env" >nul
+  if errorlevel 1 goto failed
+)
+
 echo   [1/4] Installing dependencies. This takes a few minutes...
 call npm install
 if errorlevel 1 goto failed

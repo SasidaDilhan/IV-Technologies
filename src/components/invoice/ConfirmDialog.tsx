@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { confirmQuotation } from "@/app/invoices/actions";
 import { formatLKR, parseDiscountInput } from "@/lib/money";
 import { PAYMENT_METHODS } from "@/lib/invoices";
+import { normaliseSerial } from "@/lib/validation";
 
 /** A quotation line that needs physical units picked before invoicing. */
 export interface TrackedLine {
@@ -66,6 +67,12 @@ export default function ConfirmDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
+  const scanRef = useRef<HTMLInputElement>(null);
+  const [scan, setScan] = useState("");
+  const [scanFlash, setScanFlash] = useState<
+    { kind: "ok" | "err"; text: string } | null
+  >(null);
+
   // Load available units for every tracked line when the dialog opens.
   useEffect(() => {
     if (!open || trackedLines.length === 0) return;
@@ -106,6 +113,54 @@ export default function ConfirmDialog({
       return { ...prev, [quoteLineId]: [...current, serialId] };
     });
   }
+
+  /**
+   * Pick a unit by scanning the sticker on its box.
+   *
+   * Faster and far less error-prone than finding the number by eye once there
+   * are more than a handful in stock, and it is the same physical action the
+   * operator already does at stock intake.
+   */
+  function handleScan(raw: string) {
+    const serial = normaliseSerial(raw);
+    if (!serial) return;
+
+    for (const line of trackedLines) {
+      const options = stock[line.quoteLineId] ?? [];
+      const match = options.find((s) => s.serialNumber === serial);
+      if (!match) continue;
+
+      const chosen = picked[line.quoteLineId] ?? [];
+      if (chosen.includes(match.id)) {
+        setScanFlash({ kind: "err", text: `${serial} is already picked.` });
+        return;
+      }
+      if (chosen.length >= line.quantity) {
+        setScanFlash({
+          kind: "err",
+          text:
+            `${line.itemCode} already has all ${line.quantity} picked. ` +
+            `Unpick one first.`,
+        });
+        return;
+      }
+
+      toggle(line.quoteLineId, match.id, line.quantity);
+      setScanFlash({ kind: "ok", text: `${serial} added to ${line.itemCode}.` });
+      return;
+    }
+
+    setScanFlash({
+      kind: "err",
+      text: `${serial} is not in stock for anything on this bill.`,
+    });
+  }
+
+  // The scanner types into whatever has focus, so step 1 keeps the scan box
+  // focused unless the operator has deliberately clicked elsewhere.
+  useEffect(() => {
+    if (open && step === "serials" && !loading) scanRef.current?.focus();
+  }, [open, step, loading]);
 
   const serialsComplete = trackedLines.every(
     (line) => (picked[line.quoteLineId] ?? []).length === line.quantity,
@@ -199,6 +254,38 @@ export default function ConfirmDialog({
               <p className="text-sm text-slate-500">Loading stock...</p>
             ) : (
               <div className="space-y-5">
+                <div>
+                  <input
+                    ref={scanRef}
+                    value={scan}
+                    onChange={(e) => {
+                      setScan(e.target.value);
+                      setScanFlash(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      handleScan(scan);
+                      setScan("");
+                    }}
+                    placeholder="Scan a serial number, or tap the units below"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={`${field} h-12 font-mono`}
+                  />
+                  {scanFlash && (
+                    <p
+                      className={`mt-2 rounded-md px-3 py-1.5 text-sm ${
+                        scanFlash.kind === "ok"
+                          ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+                          : "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-300"
+                      }`}
+                    >
+                      {scanFlash.text}
+                    </p>
+                  )}
+                </div>
+
                 {trackedLines.map((line) => {
                   const options = stock[line.quoteLineId] ?? [];
                   const chosen = picked[line.quoteLineId] ?? [];
