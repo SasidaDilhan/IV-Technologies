@@ -23,18 +23,16 @@ function DocCard({ doc }: { doc: HistoryDoc }) {
             <span className="text-xs uppercase tracking-wide text-slate-500">
               {doc.kind === "quotation" ? "Quotation" : "Invoice"}
             </span>
-            {doc.kind === "quotation" ? (
-              <Link
-                href={`/quotations/${doc.id}`}
-                className="font-mono font-medium underline"
-              >
-                {doc.number}
-              </Link>
-            ) : (
-              // Invoice screens arrive in Phase 06; the record is shown but
-              // there is nowhere to link to yet.
-              <span className="font-mono font-medium">{doc.number}</span>
-            )}
+            <Link
+              href={
+                doc.kind === "quotation"
+                  ? `/quotations/${doc.id}`
+                  : `/invoices/${doc.id}`
+              }
+              className="font-mono font-medium underline"
+            >
+              {doc.number}
+            </Link>
             <StatusPill>{doc.status}</StatusPill>
           </div>
           <p className="mt-2 font-medium">{doc.customer.name}</p>
@@ -107,20 +105,9 @@ export default function HistoryResults({ result }: { result: HistoryResult }) {
                   {matchedSerial.soldTo.phone}
                 </span>
               </span>
-            ) : matchedSerial.reservedFor ? (
-              <span>
-                Reserved for <strong>{matchedSerial.reservedFor.name}</strong>{" "}
-                <span className="font-mono text-slate-500">
-                  {matchedSerial.reservedFor.phone}
-                </span>{" "}
-                <span className="text-slate-500">
-                  on quotation {matchedSerial.reservedFor.documentNo} - not yet
-                  invoiced.
-                </span>
-              </span>
             ) : matchedSerial.status === "in_stock" ? (
               <span className="text-slate-500">
-                Free in stock - not on any bill.
+                In stock - not sold to anyone yet.
               </span>
             ) : (
               <span className="text-slate-500">

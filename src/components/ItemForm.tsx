@@ -145,8 +145,14 @@ export default function ItemForm({
               Track serial numbers
             </span>
             <span className="block text-xs text-slate-500">
-              Log every physical unit individually. Quantity on a bill then
-              comes from the units you pick, not a typed number.
+              For equipment with a serial number on the box - cameras, DVRs,
+              hard disks. Each unit is logged in Stock intake, and when a
+              quotation is confirmed you pick exactly which units go out, so
+              later you can look up who has any given unit.
+            </span>
+            <span className="mt-1 block text-xs text-slate-500">
+              Leave off for cable, connectors, brackets and labour - anything
+              counted rather than tracked one by one.
             </span>
             {lockTracking && (
               <span className="mt-1 block text-xs text-amber-600 dark:text-amber-500">

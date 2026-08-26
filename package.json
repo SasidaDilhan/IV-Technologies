@@ -10,7 +10,8 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
-    "db:backup": "tsx scripts/backup.ts"
+    "db:backup": "tsx scripts/backup.ts",
+    "db:handover": "tsx scripts/prepare-handover.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

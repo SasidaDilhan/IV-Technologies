@@ -40,12 +40,6 @@ export interface MatchedSerial {
   itemName: string;
   /** Set once the unit is on an invoice - this is the owner. */
   soldTo: { name: string; phone: string } | null;
-  /**
-   * Set when the unit is promised on an open quotation but not yet invoiced.
-   * Reported separately from soldTo so "in stock" is never mistaken for
-   * "free to sell" - the unit is spoken for.
-   */
-  reservedFor: { name: string; phone: string; documentNo: string } | null;
 }
 
 export interface HistoryResult {
@@ -203,26 +197,17 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
     })),
   ].sort((a, b) => b.issueDate.getTime() - a.issueDate.getTime());
 
-  // Who ends up owning the scanned unit: the invoice is the sale, so it wins
-  // over a quotation, which is only a reservation.
+  // Who owns the scanned unit. Quotations never carry units, so an invoice
+  // is the only thing that can answer this.
   let soldTo: MatchedSerial["soldTo"] = null;
-  let reservedFor: MatchedSerial["reservedFor"] = null;
   if (serialUnit) {
-    const carries = (doc: HistoryDoc) =>
-      doc.lines.some((l) => l.serialNumbers.includes(serialUnit.serialNumber));
-
-    const invoiced = documents.find((doc) => doc.kind === "invoice" && carries(doc));
+    const invoiced = documents.find(
+      (doc) =>
+        doc.kind === "invoice" &&
+        doc.lines.some((l) => l.serialNumbers.includes(serialUnit.serialNumber)),
+    );
     if (invoiced) {
       soldTo = { name: invoiced.customer.name, phone: invoiced.customer.phone };
-    } else {
-      const quoted = documents.find((doc) => doc.kind === "quotation" && carries(doc));
-      if (quoted) {
-        reservedFor = {
-          name: quoted.customer.name,
-          phone: quoted.customer.phone,
-          documentNo: quoted.number,
-        };
-      }
     }
   }
 
@@ -235,7 +220,6 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
           itemCode: serialUnit.item.itemCode,
           itemName: serialUnit.item.name,
           soldTo,
-          reservedFor,
         }
       : null,
     matchedItems: items,

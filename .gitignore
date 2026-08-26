@@ -45,3 +45,6 @@ backups/
 
 # alternate build output used for verification
 .next-build/
+
+# generated handover database
+handover/

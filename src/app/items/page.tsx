@@ -10,10 +10,8 @@ export default async function ItemsPage() {
   const items = await prisma.item.findMany({
     orderBy: { itemCode: "asc" },
     include: {
-      // Two different counts, because they answer two different questions:
-      //   inStock - units physically on the shelf (a quote is not a sale)
-      //   free    - units not already promised on an open quotation
-      // Showing only the first is how the same camera gets quoted twice.
+      // Units on the shelf. Quotations do not hold stock, so this is also
+      // the number available to sell - only an invoice takes a unit away.
       _count: {
         select: {
           serialUnits: { where: { status: "in_stock" } },
@@ -22,15 +20,6 @@ export default async function ItemsPage() {
     },
   });
 
-  const freeCounts = new Map(
-    (
-      await prisma.serialUnit.groupBy({
-        by: ["itemId"],
-        where: { status: "in_stock", quoteLineId: null, invoiceLineId: null },
-        _count: { _all: true },
-      })
-    ).map((row) => [row.itemId, row._count._all]),
-  );
 
   return (
     <PageShell>
@@ -99,17 +88,9 @@ export default async function ItemsPage() {
                         <Link
                           href={`/stock?itemId=${item.id}`}
                           className="font-mono font-medium underline decoration-dotted"
-                          title="Units in stock (units not reserved on a quotation)"
+                          title="Units in stock and available to sell"
                         >
                           {item._count.serialUnits}
-                          {(() => {
-                            const free = freeCounts.get(item.id) ?? 0;
-                            return free === item._count.serialUnits ? null : (
-                              <span className="ml-1 font-normal text-slate-500">
-                                ({free} free)
-                              </span>
-                            );
-                          })()}
                         </Link>
                       ) : (
                         <span className="text-slate-400" title="Not serial tracked">
