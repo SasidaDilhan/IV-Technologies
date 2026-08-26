@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { formatDocNo } from "@/lib/doc-number";
+
+export { formatDocNo };
 
 /**
  * Settings is a single row, always id = 1. Reading it lazily creates it, so a
@@ -106,6 +109,3 @@ export async function nextInvoiceNo(
   );
 }
 
-export function formatDocNo(prefix: string, n: number, padding: number): string {
-  return `${prefix}${String(n).padStart(padding, "0")}`;
-}
