@@ -15,14 +15,65 @@ function parseDate(value: string, label: string): Date {
   return d;
 }
 
+/** Shared validation for the line list of a new or revised quotation. */
+async function validatedLines(
+  tx: Pick<typeof prisma, "item">,
+  payload: QuotationPayload,
+) {
+  const out: {
+    itemId: number;
+    unitPrice: number;
+    quantity: number;
+    lineDiscountType: string;
+    lineDiscountValue: number;
+    note: string | null;
+    sortOrder: number;
+  }[] = [];
+
+  for (let i = 0; i < payload.lines.length; i++) {
+    const line = payload.lines[i];
+    const item = await tx.item.findUnique({ where: { id: line.itemId } });
+    if (!item) throw new Error(`Item ${line.itemId} no longer exists.`);
+
+    if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+      throw new Error(`Quantity for ${item.itemCode} must be at least 1.`);
+    }
+    if (line.unitPrice < 0) {
+      throw new Error(`Unit price for ${item.itemCode} cannot be negative.`);
+    }
+
+    out.push({
+      itemId: item.id,
+      unitPrice: line.unitPrice,
+      quantity: line.quantity,
+      lineDiscountType: line.discountType,
+      lineDiscountValue: line.discountValue,
+      note: line.note || null,
+      sortOrder: i,
+    });
+  }
+
+  return out;
+}
+
+function checkDates(payload: QuotationPayload) {
+  const issueDate = parseDate(payload.issueDate, "Issue date");
+  const validUntil = parseDate(payload.validUntil, "Valid until");
+  if (validUntil < issueDate) {
+    throw new Error("Valid until cannot be before the issue date.");
+  }
+  return { issueDate, validUntil };
+}
+
 /**
  * Transactional core of "save a quotation".
  *
- * Kept out of the server action so it can be exercised directly - the action
- * is only a thin wrapper that adds cache revalidation. Everything here runs in
- * one transaction: a half-written quote (lines without their serials, or a
- * burnt quote number with no document) is worse than a failure the operator
- * can retry.
+ * A quotation prices a MODEL and a quantity - it does not reserve stock. The
+ * physical units are chosen when the customer confirms and the quote becomes
+ * an invoice, which is the point the goods actually leave the shop.
+ *
+ * Kept out of the server action so it can be exercised directly; the action is
+ * only a thin wrapper that adds cache revalidation.
  */
 export async function createQuotation(
   payload: QuotationPayload,
@@ -30,16 +81,11 @@ export async function createQuotation(
   if (!payload.customerId) return { ok: false, error: "Select a customer first." };
   if (payload.lines.length === 0) return { ok: false, error: "Add at least one item." };
 
-  let issueDate: Date;
-  let validUntil: Date;
+  let dates: { issueDate: Date; validUntil: Date };
   try {
-    issueDate = parseDate(payload.issueDate, "Issue date");
-    validUntil = parseDate(payload.validUntil, "Valid until");
+    dates = checkDates(payload);
   } catch (e) {
     return { ok: false, error: (e as Error).message };
-  }
-  if (validUntil < issueDate) {
-    return { ok: false, error: "Valid until cannot be before the issue date." };
   }
 
   // Make sure the settings row exists before the transaction increments it.
@@ -52,77 +98,23 @@ export async function createQuotation(
       });
       if (!customer) throw new Error("That customer no longer exists.");
 
+      const lines = await validatedLines(tx, payload);
       const quoteNo = await nextQuoteNo(tx);
 
       const quotation = await tx.quotation.create({
         data: {
           quoteNo,
           customerId: payload.customerId,
-          issueDate,
-          validUntil,
+          issueDate: dates.issueDate,
+          validUntil: dates.validUntil,
           status: "draft",
           billDiscountType: payload.billDiscountType,
           billDiscountValue: payload.billDiscountValue,
           termsText: payload.termsText,
+          extraTerms: payload.extraTerms || null,
+          lines: { create: lines },
         },
       });
-
-      for (let i = 0; i < payload.lines.length; i++) {
-        const line = payload.lines[i];
-
-        const item = await tx.item.findUnique({ where: { id: line.itemId } });
-        if (!item) throw new Error(`Item ${line.itemId} no longer exists.`);
-
-        // Quantity is authoritative from the serial selection for tracked
-        // items. Trusting the client's number here is what would let the
-        // printed quantity drift from the units actually reserved.
-        const quantity = item.tracksSerials ? line.serialIds.length : line.quantity;
-
-        if (item.tracksSerials && quantity === 0) {
-          throw new Error(`Select at least one serial number for ${item.itemCode}.`);
-        }
-        if (quantity <= 0) {
-          throw new Error(`Quantity for ${item.itemCode} must be at least 1.`);
-        }
-        if (line.unitPrice < 0) {
-          throw new Error(`Unit price for ${item.itemCode} cannot be negative.`);
-        }
-
-        const quoteLine = await tx.quoteLine.create({
-          data: {
-            quotationId: quotation.id,
-            itemId: item.id,
-            unitPrice: line.unitPrice,
-            quantity,
-            lineDiscountType: line.discountType,
-            lineDiscountValue: line.discountValue,
-            note: line.note || null,
-            sortOrder: i,
-          },
-        });
-
-        if (item.tracksSerials) {
-          // Re-check inside the transaction: the picker's list was fetched
-          // earlier, and another operator may have reserved a unit since.
-          const claimed = await tx.serialUnit.updateMany({
-            where: {
-              id: { in: line.serialIds },
-              itemId: item.id,
-              status: "in_stock",
-              quoteLineId: null,
-              invoiceLineId: null,
-            },
-            data: { quoteLineId: quoteLine.id },
-          });
-
-          if (claimed.count !== line.serialIds.length) {
-            throw new Error(
-              `Some serial numbers for ${item.itemCode} were taken by another ` +
-                `bill while this one was open. Reopen the picker and choose again.`,
-            );
-          }
-        }
-      }
 
       return { id: quotation.id, quoteNo };
     });
@@ -139,10 +131,9 @@ export async function createQuotation(
 /**
  * Re-save an existing quotation over the same record.
  *
- * The lines are replaced wholesale rather than diffed: a bill is small, and
- * deleting the QuoteLines releases their serial reservations automatically
- * (SerialUnit.quoteLineId is onDelete: SetNull), so the claim logic below is
- * identical to a first save. The quote number never changes.
+ * Lines are replaced wholesale rather than diffed: a bill is small, and with
+ * no stock reserved at this stage there is nothing to release. The quote
+ * number never changes.
  */
 export async function updateQuotation(
   id: number,
@@ -151,16 +142,11 @@ export async function updateQuotation(
   if (!payload.customerId) return { ok: false, error: "Select a customer first." };
   if (payload.lines.length === 0) return { ok: false, error: "Add at least one item." };
 
-  let issueDate: Date;
-  let validUntil: Date;
+  let dates: { issueDate: Date; validUntil: Date };
   try {
-    issueDate = parseDate(payload.issueDate, "Issue date");
-    validUntil = parseDate(payload.validUntil, "Valid until");
+    dates = checkDates(payload);
   } catch (e) {
     return { ok: false, error: (e as Error).message };
-  }
-  if (validUntil < issueDate) {
-    return { ok: false, error: "Valid until cannot be before the issue date." };
   }
 
   try {
@@ -177,69 +163,22 @@ export async function updateQuotation(
         );
       }
 
-      // Releases the old serial reservations via onDelete: SetNull.
-      await tx.quoteLine.deleteMany({ where: { quotationId: id } });
+      const lines = await validatedLines(tx, payload);
 
+      await tx.quoteLine.deleteMany({ where: { quotationId: id } });
       await tx.quotation.update({
         where: { id },
         data: {
           customerId: payload.customerId,
-          issueDate,
-          validUntil,
+          issueDate: dates.issueDate,
+          validUntil: dates.validUntil,
           billDiscountType: payload.billDiscountType,
           billDiscountValue: payload.billDiscountValue,
           termsText: payload.termsText,
+          extraTerms: payload.extraTerms || null,
+          lines: { create: lines },
         },
       });
-
-      for (let i = 0; i < payload.lines.length; i++) {
-        const line = payload.lines[i];
-        const item = await tx.item.findUnique({ where: { id: line.itemId } });
-        if (!item) throw new Error(`Item ${line.itemId} no longer exists.`);
-
-        const quantity = item.tracksSerials ? line.serialIds.length : line.quantity;
-        if (item.tracksSerials && quantity === 0) {
-          throw new Error(`Select at least one serial number for ${item.itemCode}.`);
-        }
-        if (quantity <= 0) {
-          throw new Error(`Quantity for ${item.itemCode} must be at least 1.`);
-        }
-        if (line.unitPrice < 0) {
-          throw new Error(`Unit price for ${item.itemCode} cannot be negative.`);
-        }
-
-        const quoteLine = await tx.quoteLine.create({
-          data: {
-            quotationId: id,
-            itemId: item.id,
-            unitPrice: line.unitPrice,
-            quantity,
-            lineDiscountType: line.discountType,
-            lineDiscountValue: line.discountValue,
-            note: line.note || null,
-            sortOrder: i,
-          },
-        });
-
-        if (item.tracksSerials) {
-          const claimed = await tx.serialUnit.updateMany({
-            where: {
-              id: { in: line.serialIds },
-              itemId: item.id,
-              status: "in_stock",
-              quoteLineId: null,
-              invoiceLineId: null,
-            },
-            data: { quoteLineId: quoteLine.id },
-          });
-          if (claimed.count !== line.serialIds.length) {
-            throw new Error(
-              `Some serial numbers for ${item.itemCode} were taken by another ` +
-                `bill. Reopen the picker and choose again.`,
-            );
-          }
-        }
-      }
 
       return { id, quoteNo: existing.quoteNo };
     });

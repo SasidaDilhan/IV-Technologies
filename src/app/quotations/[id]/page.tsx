@@ -23,7 +23,7 @@ export default async function QuotationDetailPage({
       invoice: true,
       lines: {
         orderBy: { sortOrder: "asc" },
-        include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
+        include: { item: true },
       },
     },
   });
@@ -91,6 +91,15 @@ export default async function QuotationDetailPage({
                   quoteNo={quotation.quoteNo}
                   total={totals.total}
                   today={today}
+                  trackedLines={quotation.lines
+                    .filter((l) => l.item.tracksSerials)
+                    .map((l) => ({
+                      quoteLineId: l.id,
+                      itemId: l.itemId,
+                      itemCode: l.item.itemCode,
+                      name: l.item.name,
+                      quantity: l.quantity,
+                    }))}
                 />
               </>
             )}
@@ -126,11 +135,6 @@ export default async function QuotationDetailPage({
                     <span className="block font-mono text-xs text-slate-500">
                       {line.item.itemCode}
                     </span>
-                    {line.serialUnits.length > 0 && (
-                      <span className="block font-mono text-xs text-slate-500">
-                        S/N: {line.serialUnits.map((s) => s.serialNumber).join(", ")}
-                      </span>
-                    )}
                     {line.note && (
                       <span className="block text-xs text-slate-500">{line.note}</span>
                     )}
@@ -165,10 +169,21 @@ export default async function QuotationDetailPage({
           </div>
         </div>
 
+        {quotation.extraTerms && (
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Terms for this bill
+            </h2>
+            <pre className="mt-2 whitespace-pre-wrap rounded-lg border border-slate-300 p-4 font-sans text-sm leading-relaxed dark:border-slate-700">
+              {quotation.extraTerms}
+            </pre>
+          </div>
+        )}
+
         {quotation.termsText && (
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Terms &amp; conditions
+              Standard terms
             </h2>
             <pre className="mt-2 whitespace-pre-wrap rounded-lg border border-slate-200 p-4 font-sans text-xs leading-relaxed dark:border-slate-800">
               {quotation.termsText}

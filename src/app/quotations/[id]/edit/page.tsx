@@ -29,7 +29,7 @@ export default async function EditQuotationPage({
       invoice: true,
       lines: {
         orderBy: { sortOrder: "asc" },
-        include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
+        include: { item: true },
       },
     },
   });
@@ -81,6 +81,7 @@ export default async function EditQuotationPage({
               quotation.billDiscountValue,
             ),
             terms: quotation.termsText ?? settings.defaultTerms,
+            extraTerms: quotation.extraTerms ?? "",
             lines: quotation.lines.map((line) => ({
               key: `line-${line.id}`,
               itemId: line.itemId,
@@ -89,10 +90,6 @@ export default async function EditQuotationPage({
               tracksSerials: line.item.tracksSerials,
               unitPrice: toRupees(line.unitPrice).toFixed(2),
               quantity: line.quantity,
-              serials: line.serialUnits.map((s) => ({
-                id: s.id,
-                serialNumber: s.serialNumber,
-              })),
               discountType:
                 line.lineDiscountType === "percent" ? "percent" : "fixed",
               discountValue: formatDiscountInput(

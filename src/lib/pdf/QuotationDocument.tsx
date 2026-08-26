@@ -64,6 +64,8 @@ export interface QuotationPdfProps {
   billDiscountType: string;
   billDiscountValue: number;
   termsText: string | null;
+  /** Job-specific conditions, printed above the standard terms. */
+  extraTerms?: string | null;
   settings: PdfSettings;
   /** Invoices only. */
   payments?: PdfPayment[];
@@ -149,6 +151,20 @@ const styles = StyleSheet.create({
   grandValue: { fontSize: 12, fontFamily: "Helvetica-Bold" },
 
   termsTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 8 },
+  extraTermsBox: {
+    borderWidth: 1,
+    borderColor: RULE,
+    borderRadius: 4,
+    padding: 9,
+    marginBottom: 10,
+  },
+  extraTermsHeading: {
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    color: GREY,
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
   termsHeading: {
     fontSize: 9.5,
     fontFamily: "Helvetica-Bold",
@@ -233,6 +249,9 @@ export function QuotationDocument(props: QuotationPdfProps) {
   const numberLabel = isInvoice ? "INVOICE NUMBER" : "ESTIMATE NUMBER";
   const paid = (props.payments ?? []).reduce((sum, p) => sum + p.amount, 0);
   const balanceDue = total - paid;
+
+  const hasStandardTerms = !!props.termsText && props.termsText.trim() !== "";
+  const hasExtraTerms = !!props.extraTerms && props.extraTerms.trim() !== "";
 
   const businessLines = [
     [settings.addressLine1, settings.city].filter(Boolean).join(" "),
@@ -399,10 +418,20 @@ export function QuotationDocument(props: QuotationPdfProps) {
         {footer}
       </Page>
 
-      {props.termsText && props.termsText.trim() !== "" && (
+      {(hasStandardTerms || hasExtraTerms) && (
         <Page size="A4" style={styles.page}>
           <Text style={styles.termsTitle}>Terms &amp; Conditions</Text>
-          {renderTerms(props.termsText)}
+
+          {/* Job-specific conditions first: they are what differs from the
+              boilerplate, so they must not be buried under ten sections. */}
+          {hasExtraTerms && (
+            <View style={styles.extraTermsBox}>
+              <Text style={styles.extraTermsHeading}>For this job</Text>
+              {renderTerms(props.extraTerms as string)}
+            </View>
+          )}
+
+          {hasStandardTerms && renderTerms(props.termsText as string)}
 
           <View style={styles.signFooter}>
             <Text style={styles.signName}>{settings.businessName}</Text>

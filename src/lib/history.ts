@@ -101,10 +101,16 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
     { customer: customerWhere },
   ];
 
+  // Quotations never carry units, so a serial hit can only reach one through
+  // its customer or its number - not through a line.
+  const quotationMatches = commonMatches.filter(
+    (m) => !("lines" in m) || !JSON.stringify(m).includes("serialUnits"),
+  );
+
   const [quotations, invoices] = await Promise.all([
     prisma.quotation.findMany({
       where: {
-        OR: [...commonMatches, { quoteNo: { contains: q } }],
+        OR: [...quotationMatches, { quoteNo: { contains: q } }],
       },
       orderBy: { issueDate: "desc" },
       take: 50,
@@ -112,7 +118,7 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
         customer: true,
         lines: {
           orderBy: { sortOrder: "asc" },
-          include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
+          include: { item: true },
         },
       },
     }),
@@ -140,7 +146,8 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
       quantity: number;
       unitPrice: number;
       item: { itemCode: string; name: string };
-      serialUnits: { id: number; serialNumber: string }[];
+      /** Invoice lines carry units; quotation lines never do. */
+      serialUnits?: { id: number; serialNumber: string }[];
     }[],
   ): HistoryLine[] {
     return lines.map((line) => ({
@@ -148,10 +155,11 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
       itemName: line.item.name,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
-      serialNumbers: line.serialUnits.map((s) => s.serialNumber),
+      serialNumbers: (line.serialUnits ?? []).map((s) => s.serialNumber),
       matched:
         itemIdSet.has(line.itemId) ||
-        (serialUnit !== null && line.serialUnits.some((s) => s.id === serialUnit.id)),
+        (serialUnit !== null &&
+          (line.serialUnits ?? []).some((s) => s.id === serialUnit.id)),
     }));
   }
 

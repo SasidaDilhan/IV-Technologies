@@ -65,6 +65,7 @@ export async function GET(
       billDiscountType: quotation.billDiscountType,
       billDiscountValue: quotation.billDiscountValue,
       termsText: quotation.termsText,
+      extraTerms: quotation.extraTerms,
       settings: {
         businessName: settings.businessName,
         addressLine1: settings.addressLine1,

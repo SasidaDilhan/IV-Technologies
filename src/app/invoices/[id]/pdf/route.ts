@@ -63,6 +63,7 @@ export async function GET(
       billDiscountType: invoice.billDiscountType,
       billDiscountValue: invoice.billDiscountValue,
       termsText: invoice.termsText,
+      extraTerms: invoice.extraTerms,
       payments: invoice.payments.map((p) => ({
         date: formatDate(p.paidAt),
         method: p.method,

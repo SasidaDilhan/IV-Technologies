@@ -5,18 +5,20 @@
  * Money crosses this boundary as CENTS and discounts in their stored form
  * (cents or basis points) - the client converts once, using the same helpers
  * the server would, so there is a single conversion path.
+ *
+ * Note there are no serial numbers here. A quotation prices a MODEL and a
+ * quantity; which physical units go out is decided when the customer confirms
+ * and the quotation becomes an invoice.
  */
 
 export interface DraftLinePayload {
   itemId: number;
   /** Cents. Snapshot of the price agreed for this bill. */
   unitPrice: number;
-  /** Ignored for serial-tracked items; serialIds.length wins. */
   quantity: number;
   discountType: string;
   discountValue: number;
   note: string;
-  serialIds: number[];
 }
 
 export interface QuotationPayload {
@@ -26,6 +28,8 @@ export interface QuotationPayload {
   billDiscountType: string;
   billDiscountValue: number;
   termsText: string;
+  /** Conditions specific to this job; printed as its own section. */
+  extraTerms: string;
   lines: DraftLinePayload[];
 }
 

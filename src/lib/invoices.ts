@@ -2,8 +2,16 @@ import { prisma } from "@/lib/prisma";
 import { billTotals } from "@/lib/money";
 import { getSettings, nextInvoiceNo } from "@/lib/settings";
 
+/** Which physical units go out against one line of the quotation. */
+export interface LineSerials {
+  quoteLineId: number;
+  serialIds: number[];
+}
+
 export interface ConvertInput {
   quotationId: number;
+  /** One entry per serial-tracked line. Untracked lines need no entry. */
+  serials: LineSerials[];
   /** Cents taken at confirmation. May be 0. */
   advanceAmount: number;
   /** "cash" | "card" | "bank_transfer" | "cheque" */
@@ -43,14 +51,13 @@ function addDays(date: Date, days: number): Date {
 /**
  * Confirm a quotation into an invoice.
  *
- * This is the moment the goods are committed: the units reserved on the quote
- * become sold, and the customer owes money. It all happens in one transaction
- * because a half-converted quote - an invoice whose units are still in stock,
- * or sold units with no invoice - is a stock count nobody can reconcile.
+ * This is where the physical units are chosen. A quotation only priced a model
+ * and a quantity; the customer has now agreed, so the specific serial numbers
+ * leaving the shop are picked here and marked sold.
  *
- * The advance is recorded as the first Payment rather than as a separate
- * amount, so there is exactly one ledger of money received and its method and
- * date are captured like any other payment.
+ * It all runs in one transaction because a half-converted quote - an invoice
+ * whose units are still in stock, or sold units with no invoice - is a stock
+ * count nobody can reconcile.
  */
 export async function convertToInvoice(
   input: ConvertInput,
@@ -67,16 +74,15 @@ export async function convertToInvoice(
 
   await getSettings();
 
+  const chosen = new Map(input.serials.map((s) => [s.quoteLineId, s.serialIds]));
+
   try {
     const result = await prisma.$transaction(async (tx) => {
       const quotation = await tx.quotation.findUnique({
         where: { id: input.quotationId },
         include: {
           invoice: true,
-          lines: {
-            orderBy: { sortOrder: "asc" },
-            include: { item: true, serialUnits: true },
-          },
+          lines: { orderBy: { sortOrder: "asc" }, include: { item: true } },
         },
       });
 
@@ -115,6 +121,7 @@ export async function convertToInvoice(
           // never disagree about how much has been received.
           advanceAmount: 0,
           termsText: quotation.termsText,
+          extraTerms: quotation.extraTerms,
         },
       });
 
@@ -132,26 +139,41 @@ export async function convertToInvoice(
           },
         });
 
-        if (line.serialUnits.length > 0) {
-          // The quoteLine link is deliberately left in place: it is the record
-          // that this quotation reserved these units. Only the sale is added.
-          const sold = await tx.serialUnit.updateMany({
-            where: {
-              id: { in: line.serialUnits.map((s) => s.id) },
-              status: "in_stock",
-              invoiceLineId: null,
-            },
-            data: { invoiceLineId: invoiceLine.id, status: "sold" },
-          });
+        if (!line.item.tracksSerials) continue;
 
-          if (sold.count !== line.serialUnits.length) {
-            throw new Error(
-              `Some units for ${line.item.itemCode} are no longer in stock. ` +
-                `Reopen the quotation and reselect them.`,
-            );
-          }
+        const serialIds = chosen.get(line.id) ?? [];
+        if (serialIds.length !== line.quantity) {
+          throw new Error(
+            `${line.item.itemCode}: pick exactly ${line.quantity} serial ` +
+              `number${line.quantity === 1 ? "" : "s"} ` +
+              `(${serialIds.length} selected).`,
+          );
+        }
+
+        // Claim inside the transaction: the picker's list was fetched earlier
+        // and another sale may have taken a unit since.
+        const sold = await tx.serialUnit.updateMany({
+          where: {
+            id: { in: serialIds },
+            itemId: line.itemId,
+            status: "in_stock",
+            invoiceLineId: null,
+          },
+          data: { invoiceLineId: invoiceLine.id, status: "sold" },
+        });
+
+        if (sold.count !== serialIds.length) {
+          throw new Error(
+            `Some units for ${line.item.itemCode} were sold on another bill ` +
+              `while this one was open. Reopen the picker and choose again.`,
+          );
         }
       }
+
+      await tx.quotation.update({
+        where: { id: quotation.id },
+        data: { status: "confirmed" },
+      });
 
       if (input.advanceAmount > 0) {
         await tx.payment.create({
@@ -165,11 +187,6 @@ export async function convertToInvoice(
           },
         });
       }
-
-      await tx.quotation.update({
-        where: { id: quotation.id },
-        data: { status: "confirmed" },
-      });
 
       return { id: invoice.id, invoiceNo };
     });
@@ -216,10 +233,7 @@ export async function addPayment(
   });
 
   if (input.amount > totals.balanceDue) {
-    return {
-      ok: false,
-      error: "That is more than the outstanding balance.",
-    };
+    return { ok: false, error: "That is more than the outstanding balance." };
   }
 
   await prisma.payment.create({

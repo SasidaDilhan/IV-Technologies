@@ -125,9 +125,9 @@ const ITEMS = [
 /**
  * Serial-tracked stock on hand.
  *
- * The estimate does not record which physical units were used - that is the
- * gap this system closes. Placeholder serials stand in so the quote has real
- * units to reserve; replace them with the actual numbers off the boxes.
+ * Placeholder serials stand in so there is stock to sell; replace them with
+ * the actual numbers off the boxes. They are not attached to the quotation -
+ * units are picked at invoice time.
  */
 const STOCK = [
   {
@@ -147,28 +147,21 @@ const STOCK = [
 /**
  * The eleven lines of Estimate 001253, in the printed order.
  * `note` is the blue sub-text under the item name on the original.
+ *
+ * No serial numbers here: a quotation prices a model and a quantity. The
+ * physical units are chosen when the customer confirms and it becomes an
+ * invoice.
  */
 const LINES = [
-  { itemCode: "DS-7108HGHI-M1", quantity: 1, unitPrice: 18500, serials: ["SN-DVR-0001"] },
+  { itemCode: "DS-7108HGHI-M1", quantity: 1, unitPrice: 18500 },
   {
     itemCode: "PSU-OUT-2A",
     quantity: 8,
     unitPrice: 1850,
     note: "3 Months Warranty",
   },
-  {
-    itemCode: "DS-2CE10DF0T-PFS",
-    quantity: 8,
-    unitPrice: 8950,
-    serials: Array.from({ length: 8 }, (_, i) => `SN-CAM-${String(i + 1).padStart(4, "0")}`),
-  },
-  {
-    itemCode: "HDD-1TB",
-    quantity: 1,
-    unitPrice: 19500,
-    note: "2years warranty",
-    serials: ["SN-HDD-0001"],
-  },
+  { itemCode: "DS-2CE10DF0T-PFS", quantity: 8, unitPrice: 8950 },
+  { itemCode: "HDD-1TB", quantity: 1, unitPrice: 19500, note: "2years warranty" },
   { itemCode: "BALUN-8MP", quantity: 8, unitPrice: 650 },
   { itemCode: "RACK-3U", quantity: 1, unitPrice: 3950 },
   { itemCode: "SRV-INSTALL", quantity: 8, unitPrice: 3950 },
@@ -287,17 +280,7 @@ async function main() {
     const item = itemsByCode.get(line.itemCode);
     if (!item) throw new Error(`LINES references unknown itemCode ${line.itemCode}`);
 
-    const serials = "serials" in line ? line.serials : undefined;
-    if (item.tracksSerials && !serials?.length) {
-      throw new Error(`${line.itemCode} tracks serials but no serials were listed`);
-    }
-    if (serials && serials.length !== line.quantity) {
-      throw new Error(
-        `${line.itemCode}: ${serials.length} serials listed but quantity is ${line.quantity}`,
-      );
-    }
-
-    const quoteLine = await prisma.quoteLine.create({
+    await prisma.quoteLine.create({
       data: {
         quotationId: quotation.id,
         itemId: item.id,
@@ -310,12 +293,6 @@ async function main() {
       },
     });
 
-    if (serials?.length) {
-      await prisma.serialUnit.updateMany({
-        where: { serialNumber: { in: serials } },
-        data: { quoteLineId: quoteLine.id },
-      });
-    }
   }
 
   await report(quotation.id);
@@ -373,10 +350,11 @@ async function report(quotationId: number) {
     );
   }
 
-  const reserved = await prisma.serialUnit.count({ where: { quoteLineId: { not: null } } });
-  const free = await prisma.serialUnit.count({ where: { quoteLineId: null } });
+  const inStock = await prisma.serialUnit.count({ where: { status: "in_stock" } });
+  const sold = await prisma.serialUnit.count({ where: { status: "sold" } });
   out.push("");
-  out.push(`Serial units: ${reserved} reserved on this estimate, ${free} free in stock`);
+  out.push(`Serial units: ${inStock} in stock, ${sold} sold`);
+  out.push("(a quotation reserves nothing - units are picked when it is invoiced)");
   console.log(out.join("\n"));
 
   if (failed > 0) throw new Error(`${failed} total(s) do not match Estimate 001253`);

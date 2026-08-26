@@ -5,16 +5,13 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 /**
- * Units available to put on a bill: in stock and not already reserved against
- * another quotation. Excluding reserved units is what stops the same physical
- * camera being promised to two customers.
+ * Units available to sell: in stock and not already on an invoice.
  *
- * `forQuotation` is passed when reopening an existing quotation - that quote's
- * own reservations must stay selectable, or removing a line would make its
- * units impossible to add back.
+ * Quotations do not reserve stock - they price a model and a quantity - so the
+ * only thing that removes a unit from this list is having been sold.
  */
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: { id: string } },
 ) {
   const itemId = Number(params.id);
@@ -22,22 +19,8 @@ export async function GET(
     return NextResponse.json({ error: "Bad item id" }, { status: 400 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const forQuotation = Number(searchParams.get("forQuotation"));
-  const ownReservation =
-    Number.isInteger(forQuotation) && forQuotation > 0
-      ? { quoteLine: { quotationId: forQuotation } }
-      : null;
-
   const serials = await prisma.serialUnit.findMany({
-    where: {
-      itemId,
-      status: "in_stock",
-      invoiceLineId: null,
-      ...(ownReservation
-        ? { OR: [{ quoteLineId: null }, ownReservation] }
-        : { quoteLineId: null }),
-    },
+    where: { itemId, status: "in_stock", invoiceLineId: null },
     orderBy: { serialNumber: "asc" },
     select: { id: true, serialNumber: true },
   });

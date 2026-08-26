@@ -39,26 +39,15 @@ type SerialRow = {
   };
 };
 
-/**
- * Why a unit cannot go on a bill, or null when it is free to sell.
- *
- * `ownQuoteLineIds` are the lines of the quotation being edited: a unit this
- * very quote already reserved is available to it, just not to anyone else.
- */
-function unavailableReason(
-  s: SerialRow,
-  ownQuoteLineIds: Set<number>,
-): string | null {
+/** Why a unit cannot be sold, or null when it is free. */
+function unavailableReason(s: SerialRow): string | null {
   if (s.invoiceLineId) return "already sold";
   if (s.status !== "in_stock") return `marked ${s.status}`;
-  if (s.quoteLineId && !ownQuoteLineIds.has(s.quoteLineId)) {
-    return "reserved on another quotation";
-  }
   return null;
 }
 
-function shapeSerial(s: SerialRow, ownQuoteLineIds: Set<number>) {
-  const reason = unavailableReason(s, ownQuoteLineIds);
+function shapeSerial(s: SerialRow) {
+  const reason = unavailableReason(s);
   return {
     id: s.id,
     serialNumber: s.serialNumber,
@@ -92,17 +81,6 @@ export async function GET(request: Request) {
   // same way so a scanner's stray whitespace or lower case still hits.
   const normalised = normaliseSerial(q);
 
-  const forQuotation = Number(searchParams.get("forQuotation"));
-  const ownQuoteLineIds = new Set<number>(
-    Number.isInteger(forQuotation) && forQuotation > 0
-      ? (
-          await prisma.quoteLine.findMany({
-            where: { quotationId: forQuotation },
-            select: { id: true },
-          })
-        ).map((l) => l.id)
-      : [],
-  );
 
   const [items, exact, partial] = await Promise.all([
     prisma.item.findMany({
@@ -119,7 +97,7 @@ export async function GET(request: Request) {
         _count: {
           select: {
             serialUnits: {
-              where: { status: "in_stock", quoteLineId: null, invoiceLineId: null },
+              where: { status: "in_stock", invoiceLineId: null },
             },
           },
         },
@@ -148,9 +126,9 @@ export async function GET(request: Request) {
       tracksSerials: item.tracksSerials,
       available: item._count.serialUnits,
     })),
-    serial: exact ? shapeSerial(exact, ownQuoteLineIds) : null,
+    serial: exact ? shapeSerial(exact) : null,
     serialHits: partial
       .filter((s) => s.serialNumber !== normalised)
-      .map((s) => shapeSerial(s, ownQuoteLineIds)),
+      .map(shapeSerial),
   });
 }

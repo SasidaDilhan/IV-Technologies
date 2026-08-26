@@ -127,9 +127,15 @@ model Quotation {
   billDiscountType  String @default("fixed")
   billDiscountValue Int    @default(0)
 
-  /// Snapshot of the terms as printed on THIS quote, so later edits to the
-  /// company default terms never alter an already-issued document.
+  /// Snapshot of the standard terms as printed on THIS quote, so later edits
+  /// to the company template never alter an already-issued document.
   termsText String?
+
+  /// Conditions specific to this job ("scaffolding by customer", "night work
+  /// surcharge"). Kept apart from the boilerplate so adding one line does not
+  /// mean editing a ten-section legal document, and so it can be printed as
+  /// its own section.
+  extraTerms String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -208,6 +214,9 @@ model Invoice {
   advanceAmount Int @default(0)
 
   termsText String?
+
+  /// Job-specific conditions, carried over from the source quotation.
+  extraTerms String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

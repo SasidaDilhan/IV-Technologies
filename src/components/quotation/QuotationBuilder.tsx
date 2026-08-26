@@ -19,7 +19,6 @@ export interface DraftLine {
   /** Rupees as typed, so the operator sees exactly what they entered. */
   unitPrice: string;
   quantity: number;
-  serials: { id: number; serialNumber: string }[];
   discountType: "fixed" | "percent";
   discountValue: string;
   note: string;
@@ -35,6 +34,7 @@ export interface InitialQuotation {
   billDiscountType: "fixed" | "percent";
   billDiscountValue: string;
   terms: string;
+  extraTerms: string;
   lines: DraftLine[];
 }
 
@@ -83,34 +83,23 @@ export default function QuotationBuilder({
     initial?.billDiscountValue ?? "",
   );
   const [terms, setTerms] = useState(initial?.terms ?? defaultTerms);
+  const [extraTerms, setExtraTerms] = useState(initial?.extraTerms ?? "");
   const [termsOpen, setTermsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
 
-  const usedSerialIds = useMemo(
-    () => lines.flatMap((l) => l.serials.map((s) => s.id)),
-    [lines],
-  );
-
   function addLine(added: AddedLine) {
     setLines((prev) => {
-      // Scanning eight cameras one at a time should build ONE line of quantity
-      // 8, the way the printed estimate reads - not eight lines of one.
-      if (added.item.tracksSerials) {
-        const index = prev.findIndex(
-          (l) => l.itemId === added.item.id && l.tracksSerials,
-        );
-        if (index !== -1) {
-          const existing = prev[index];
-          const seen = new Set(existing.serials.map((s) => s.id));
-          const merged = [
-            ...existing.serials,
-            ...added.serials.filter((s) => !seen.has(s.id)),
-          ];
-          const next = [...prev];
-          next[index] = { ...existing, serials: merged, quantity: merged.length };
-          return next;
-        }
+      // Scanning the same model twice should raise the quantity on one line,
+      // the way the printed estimate reads - not open a second line.
+      const index = prev.findIndex((l) => l.itemId === added.item.id);
+      if (index !== -1) {
+        const next = [...prev];
+        next[index] = {
+          ...next[index],
+          quantity: next[index].quantity + added.quantity,
+        };
+        return next;
       }
 
       return [
@@ -123,7 +112,6 @@ export default function QuotationBuilder({
           tracksSerials: added.item.tracksSerials,
           unitPrice: (added.item.unitPrice / 100).toFixed(2),
           quantity: added.quantity,
-          serials: added.serials,
           discountType: "fixed",
           discountValue: "",
           note: "",
@@ -168,7 +156,6 @@ export default function QuotationBuilder({
         discountType: disc.type,
         discountValue: disc.value,
         note: line.note,
-        serialIds: line.serials.map((s) => s.id),
       });
     }
 
@@ -179,6 +166,7 @@ export default function QuotationBuilder({
       billDiscountType: billDisc.type,
       billDiscountValue: billDisc.value,
       termsText: terms,
+      extraTerms,
       lines: payloadLines,
     };
   }
@@ -210,11 +198,7 @@ export default function QuotationBuilder({
     <div className="flex h-full">
       {/* ---------------- left: entry + lines ---------------- */}
       <section className="flex min-w-0 flex-1 flex-col p-4">
-        <ScanBar
-          onAdd={addLine}
-          usedSerialIds={usedSerialIds}
-          quotationId={initial?.id}
-        />
+        <ScanBar onAdd={addLine} />
 
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
           <div className="grid shrink-0 grid-cols-[1fr_7rem_5rem_8rem_7rem_2rem] gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900">
@@ -245,11 +229,6 @@ export default function QuotationBuilder({
                       <p className="truncate font-mono text-xs text-slate-500">
                         {line.itemCode}
                       </p>
-                      {line.serials.length > 0 && (
-                        <p className="font-mono text-xs text-slate-500">
-                          {line.serials.map((s) => s.serialNumber).join(", ")}
-                        </p>
-                      )}
                       <input
                         value={line.note}
                         onChange={(e) => patch(line.key, { note: e.target.value })}
@@ -265,26 +244,17 @@ export default function QuotationBuilder({
                       className={`${cell} w-full text-right font-mono`}
                     />
 
-                    {line.tracksSerials ? (
-                      <span
-                        className="pt-1 text-right font-mono text-sm"
-                        title="Set by the serial numbers selected"
-                      >
-                        {line.quantity}
-                      </span>
-                    ) : (
-                      <input
-                        type="number"
-                        min={1}
-                        value={line.quantity}
-                        onChange={(e) =>
-                          patch(line.key, {
-                            quantity: Math.max(1, Number(e.target.value) || 1),
-                          })
-                        }
-                        className={`${cell} w-full text-right font-mono`}
-                      />
-                    )}
+                    <input
+                      type="number"
+                      min={1}
+                      value={line.quantity}
+                      onChange={(e) =>
+                        patch(line.key, {
+                          quantity: Math.max(1, Number(e.target.value) || 1),
+                        })
+                      }
+                      className={`${cell} w-full text-right font-mono`}
+                    />
 
                     <div className="flex gap-1">
                       <input
@@ -380,12 +350,29 @@ export default function QuotationBuilder({
             </label>
           </div>
 
+          {/* Job-specific conditions sit in the open, not behind the dialog:
+              this is the box that actually gets used on a given bill, while
+              the standard template is set once and rarely touched. */}
+          <h2 className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Terms for this bill
+          </h2>
+          <textarea
+            value={extraTerms}
+            onChange={(e) => setExtraTerms(e.target.value)}
+            rows={3}
+            placeholder={"Anything specific to this job, one per line.\ne.g. Scaffolding to be provided by the customer"}
+            className={`${cell} mt-2 w-full resize-y leading-relaxed`}
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Printed above the standard terms. Leave empty if there are none.
+          </p>
+
           <button
             type="button"
             onClick={() => setTermsOpen(true)}
             className="mt-4 flex w-full items-center justify-between rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
           >
-            <span>Terms &amp; conditions</span>
+            <span>Standard terms</span>
             <span className="text-xs text-slate-500">
               {terms === defaultTerms ? "template" : "edited"}
             </span>
