@@ -11,19 +11,19 @@ one database file — no server, no internet connection needed to bill.
 ## Setting it up on a new computer
 
 Copy the whole project folder onto the machine, then run
-**`scripts/install-pos.bat`** once. It installs dependencies, prepares the
+**`INSTALL.bat`** once. It installs dependencies, prepares the
 database, builds the system, and takes a first backup. Node.js 20 or newer must
 be installed first (https://nodejs.org).
 
 ## Running it day to day
 
-Double-click **`scripts/start-pos.bat`**. It takes a backup, starts the system,
+Double-click **`START.bat`**. It takes a backup, starts the system,
 and opens the browser at the till screen.
 
 Leave the black window open while billing. Closing it stops the system.
 
 To make it start when the shop computer boots: press `Win+R`, type
-`shell:startup`, and put a shortcut to `start-pos.bat` in the folder that opens.
+`shell:startup`, and put a shortcut to `START.bat` in the folder that opens.
 
 The system runs at **http://localhost:3000**.
 
@@ -114,14 +114,14 @@ Use a **private** repository — the code carries the client's terms, logo and
 business details.
 
 One-time, on each shop machine: clone the repo instead of copying a folder,
-then run `scripts\install-pos.bat`. For read-only access without putting your
+then run `INSTALL.bat`. For read-only access without putting your
 GitHub password on their computer, add a **deploy key** (GitHub → repo →
 Settings → Deploy keys) generated on that machine.
 
 From then on, shipping a change is:
 
 1. Commit and push here
-2. They double-click `scripts\update-pos.bat`
+2. They double-click `UPDATE.bat`
 
 The script pulls, migrates, rebuilds. It refuses to pull if someone has edited
 the program files locally, rather than overwriting their changes.
@@ -133,7 +133,7 @@ npm run package -- --no-db
 ```
 
 Builds `handover/IV-Technology-Billing-UPDATE`. Send it, they copy it over
-their folder and run `scripts\update-pos.bat`.
+their folder and run `UPDATE.bat`.
 
 **Always use `--no-db` for an update.** Without it the package carries a
 database, and copying that over a working installation would replace their
@@ -143,7 +143,7 @@ customers and bills with an empty one.
 
 `prisma/dev.db`, `.env` and `backups/` are git-ignored, so they are in neither
 a pull nor an update package. `prisma migrate deploy` only applies migrations
-that have not run yet and never resets. And `update-pos.bat` takes a backup
+that have not run yet and never resets. And the update takes a backup
 before touching anything, refusing to continue if that backup fails.
 
 Each client keeps their own database, so their settings, logo, numbering and
@@ -195,6 +195,6 @@ directly without a running server.
 - [ ] Check the quotation and invoice numbering starts where their paper left off
 - [ ] Print one estimate and one invoice and compare against their old ones
 - [ ] Set up the backup folder somewhere off the machine
-- [ ] Put `start-pos.bat` in the Startup folder and reboot to confirm
+- [ ] Put `START.bat` in the Startup folder and reboot to confirm
 - [ ] Do one full dry run with the client watching: real customer, real items,
       real serials, generate the PDF, confirm, log the advance

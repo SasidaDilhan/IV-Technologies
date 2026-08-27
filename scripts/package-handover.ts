@@ -34,16 +34,16 @@ Setting up on this computer (do this once)
    Download the "LTS" version from  https://nodejs.org
    Accept all the defaults.
 
-2. Open the "scripts" folder and double-click:
+2. Double-click:
 
-       install-pos.bat
+       INSTALL.bat
 
    It will take a few minutes. Leave it alone until it says
    "Setup finished".
 
 3. Double-click:
 
-       scripts\\start-pos.bat
+       START.bat
 
    The billing system opens in your browser.
 
@@ -51,7 +51,7 @@ Setting up on this computer (do this once)
 Using it every day
 ------------------
 
-Double-click  scripts\\start-pos.bat
+Double-click  START.bat
 
 Leave the black window open while you are billing.
 Closing that window stops the system.
@@ -59,7 +59,7 @@ Closing that window stops the system.
 To have it start by itself when the computer turns on:
   - Press the Windows key + R
   - Type:  shell:startup
-  - Press Enter, then put a SHORTCUT to start-pos.bat in that folder.
+  - Press Enter, then put a SHORTCUT to START.bat in that folder.
 
 
 First things to set up
@@ -105,13 +105,13 @@ To apply it:
 2. Copy everything in this folder over the client's existing
    installation folder, replacing files when asked.
 
-3. Double-click:  scripts\\update-pos.bat
+3. Double-click:  UPDATE.bat
 
    It backs up first, updates the database structure, and
    rebuilds. Customers, quotations, invoices and stock are
    all kept.
 
-4. Start the system again with  scripts\\start-pos.bat
+4. Start the system again with  START.bat
 
 If anything goes wrong, the backup taken in step 3 is in the
 "backups" folder - restoring it is explained in README.md.
