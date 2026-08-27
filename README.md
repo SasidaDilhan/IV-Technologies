@@ -96,6 +96,61 @@ is reported as successful.
 
 ---
 
+## Shipping updates to a client
+
+The system runs on the shop's own machine, so an update means getting new
+program files onto that machine and rebuilding. Two ways, both safe:
+
+### Git (recommended once set up)
+
+One-time, on your machine:
+
+```
+git remote add origin git@github.com:YOUR-ACCOUNT/iv-technology-billing.git
+git push -u origin master
+```
+
+Use a **private** repository — the code carries the client's terms, logo and
+business details.
+
+One-time, on each shop machine: clone the repo instead of copying a folder,
+then run `scripts\install-pos.bat`. For read-only access without putting your
+GitHub password on their computer, add a **deploy key** (GitHub → repo →
+Settings → Deploy keys) generated on that machine.
+
+From then on, shipping a change is:
+
+1. Commit and push here
+2. They double-click `scripts\update-pos.bat`
+
+The script pulls, migrates, rebuilds. It refuses to pull if someone has edited
+the program files locally, rather than overwriting their changes.
+
+### Copying a folder (no GitHub needed)
+
+```
+npm run package -- --no-db
+```
+
+Builds `handover/IV-Technology-Billing-UPDATE`. Send it, they copy it over
+their folder and run `scripts\update-pos.bat`.
+
+**Always use `--no-db` for an update.** Without it the package carries a
+database, and copying that over a working installation would replace their
+customers and bills with an empty one.
+
+### What an update cannot break
+
+`prisma/dev.db`, `.env` and `backups/` are git-ignored, so they are in neither
+a pull nor an update package. `prisma migrate deploy` only applies migrations
+that have not run yet and never resets. And `update-pos.bat` takes a backup
+before touching anything, refusing to continue if that backup fails.
+
+Each client keeps their own database, so their settings, logo, numbering and
+history are untouched by an update.
+
+---
+
 ## For whoever maintains this
 
 ```
