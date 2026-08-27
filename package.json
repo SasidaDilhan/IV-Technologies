@@ -12,7 +12,8 @@
     "db:studio": "prisma studio",
     "db:backup": "tsx scripts/backup.ts",
     "db:handover": "tsx scripts/prepare-handover.ts",
-    "package": "tsx scripts/package-handover.ts"
+    "package": "tsx scripts/package-handover.ts",
+    "verify:package": "tsx scripts/verify-package.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
