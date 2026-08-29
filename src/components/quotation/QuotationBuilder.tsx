@@ -114,7 +114,9 @@ export default function QuotationBuilder({
           quantity: added.quantity,
           discountType: "fixed",
           discountValue: "",
-          note: "",
+          // The catalogue description is the starting point for the line note;
+          // editing it here changes this bill only.
+          note: added.item.description ?? "",
         },
       ];
     });

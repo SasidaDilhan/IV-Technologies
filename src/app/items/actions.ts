@@ -23,6 +23,7 @@ const UNIQUE_MESSAGES = {
 interface ParsedItem {
   itemCode: string;
   name: string;
+  description: string | null;
   barcode: string | null;
   unitPrice: number;
   tracksSerials: boolean;
@@ -36,6 +37,7 @@ function parseItemForm(form: FormData): {
 
   const itemCode = normaliseCode(str(form, "itemCode"));
   const name = str(form, "name");
+  const description = str(form, "description");
   const barcodeRaw = str(form, "barcode");
   const priceRaw = str(form, "unitPrice");
   const tracksSerials = bool(form, "tracksSerials");
@@ -57,6 +59,7 @@ function parseItemForm(form: FormData): {
     value: {
       itemCode,
       name,
+      description: description || null,
       barcode: barcodeRaw || null,
       unitPrice: Number.isNaN(rupees) ? 0 : toCents(rupees),
       tracksSerials,

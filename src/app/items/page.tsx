@@ -76,7 +76,14 @@ export default async function ItemsPage() {
                     <td className="whitespace-nowrap px-4 py-3 font-mono">
                       {item.itemCode}
                     </td>
-                    <td className="px-4 py-3">{item.name}</td>
+                    <td className="px-4 py-3">
+                      {item.name}
+                      {item.description && (
+                        <span className="block whitespace-pre-line text-xs text-slate-500">
+                          {item.description}
+                        </span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-slate-500">
                       {item.barcode ?? "-"}
                     </td>

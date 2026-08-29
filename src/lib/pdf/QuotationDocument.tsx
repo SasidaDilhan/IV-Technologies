@@ -334,6 +334,18 @@ export function QuotationDocument(props: QuotationPdfProps) {
                 <Text style={{ fontSize: 9 }}>{props.dueDate}</Text>
               </View>
             )}
+            {!isInvoice && props.validUntil && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginTop: 12,
+                }}
+              >
+                <Text style={styles.label}>VALID UNTIL</Text>
+                <Text style={{ fontSize: 9 }}>{props.validUntil}</Text>
+              </View>
+            )}
           </View>
         </View>
 

@@ -16,6 +16,7 @@ const serialSelect = {
       id: true,
       itemCode: true,
       name: true,
+      description: true,
       barcode: true,
       unitPrice: true,
       tracksSerials: true,
@@ -33,6 +34,7 @@ type SerialRow = {
     id: number;
     itemCode: string;
     name: string;
+    description: string | null;
     barcode: string | null;
     unitPrice: number;
     tracksSerials: boolean;
@@ -121,6 +123,7 @@ export async function GET(request: Request) {
       id: item.id,
       itemCode: item.itemCode,
       name: item.name,
+      description: item.description,
       barcode: item.barcode,
       unitPrice: item.unitPrice,
       tracksSerials: item.tracksSerials,

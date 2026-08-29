@@ -9,6 +9,7 @@ import { emptyItemFormState } from "@/app/items/form-state";
 export interface ItemFormValues {
   itemCode: string;
   name: string;
+  description: string;
   barcode: string;
   /** Rupees, as displayed in the input. */
   unitPrice: string;
@@ -92,6 +93,25 @@ export default function ItemForm({
           autoComplete="off"
         />
         <FieldError message={state.errors.name} />
+      </div>
+
+      <div>
+        <label htmlFor="description" className={labelClass}>
+          Description <span className="text-slate-400">(optional)</span>
+        </label>
+        <textarea
+          id="description"
+          name="description"
+          defaultValue={defaults?.description}
+          rows={2}
+          placeholder="3 Months Warranty"
+          className={`${inputClass} mt-1 resize-y leading-relaxed`}
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Printed under the item name on estimates and invoices. It is copied
+          onto each bill and can be edited there for that bill only.
+        </p>
+        <FieldError message={state.errors.description} />
       </div>
 
       <div>

@@ -45,6 +45,7 @@ export default async function EditItemPage({
           defaults={{
             itemCode: item.itemCode,
             name: item.name,
+            description: item.description ?? "",
             barcode: item.barcode ?? "",
             unitPrice: toRupees(item.unitPrice).toFixed(2),
             tracksSerials: item.tracksSerials,

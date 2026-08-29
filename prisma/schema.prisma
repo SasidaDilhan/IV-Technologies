@@ -57,6 +57,11 @@ model Item {
   barcode   String? @unique
   unitPrice Int
 
+  /// Standing description - warranty, what is included, how it is charged.
+  /// Copied onto a bill line as its starting note, where it can be edited for
+  /// that bill without changing the catalogue.
+  description String?
+
   /// When true, quantity on a bill line is derived from linked SerialUnits
   /// rather than typed in by hand.
   tracksSerials Boolean @default(false)

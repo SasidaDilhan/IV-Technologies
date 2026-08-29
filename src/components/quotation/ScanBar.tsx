@@ -8,6 +8,7 @@ export interface ItemHit {
   id: number;
   itemCode: string;
   name: string;
+  description: string | null;
   barcode: string | null;
   unitPrice: number;
   tracksSerials: boolean;

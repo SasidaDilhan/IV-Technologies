@@ -21,7 +21,7 @@ const field =
   "focus:outline-none focus:ring-2 focus:ring-slate-400 " +
   "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 
-/** Phone-first customer lookup, sized for the till's side rail. */
+/** Customer lookup by phone or name, sized for the till's side rail. */
 export default function CustomerPanel({ selected, onSelect }: Props) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<SelectedCustomer[]>([]);
@@ -33,8 +33,9 @@ export default function CustomerPanel({ selected, onSelect }: Props) {
 
   useEffect(() => {
     if (selected) return;
-    const digits = query.replace(/\D/g, "");
-    if (digits.length < 3) {
+    // Two characters is enough for a name; the endpoint decides whether the
+    // text looks like a phone number and matches accordingly.
+    if (query.trim().length < 2) {
       setMatches([]);
       setSearched(false);
       return;
@@ -43,9 +44,10 @@ export default function CustomerPanel({ selected, onSelect }: Props) {
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/customers/search?q=${encodeURIComponent(digits)}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/customers/search?q=${encodeURIComponent(query.trim())}`,
+          { signal: controller.signal },
+        );
         const data = await res.json();
         setMatches(data.customers ?? []);
         setSearched(true);
@@ -96,10 +98,9 @@ export default function CustomerPanel({ selected, onSelect }: Props) {
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Phone number"
-        inputMode="tel"
+        placeholder="Phone number or name"
         autoComplete="off"
-        className={`${field} font-mono`}
+        className={field}
       />
 
       {searching && <p className="mt-1 text-xs text-slate-500">Searching...</p>}
@@ -139,10 +140,15 @@ export default function CustomerPanel({ selected, onSelect }: Props) {
           }}
         >
           <p className="text-xs text-slate-500">No match - add them:</p>
-          <input name="name" placeholder="Name" className={field} />
+          <input
+            name="name"
+            placeholder="Name"
+            defaultValue={/^[\d\s+()-]+$/.test(query) ? "" : query}
+            className={field}
+          />
           <input
             name="phone"
-            defaultValue={query}
+            defaultValue={/^[\d\s+()-]+$/.test(query) ? query : ""}
             placeholder="Phone"
             className={`${field} font-mono`}
           />
