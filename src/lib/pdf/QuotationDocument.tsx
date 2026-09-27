@@ -265,7 +265,7 @@ export function QuotationDocument(props: QuotationPdfProps) {
     <View style={styles.pageFoot} fixed>
       <Text>
         {settings.businessName}
-        {props.status === "draft" ? "  -  DRAFT" : ""}
+        {props.status === "superseded" ? "  -  SUPERSEDED (replaced by a later revision)" : ""}
       </Text>
       <Text
         render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}

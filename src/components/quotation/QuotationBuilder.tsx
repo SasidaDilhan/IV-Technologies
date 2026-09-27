@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { reviseQuotation, saveQuotation } from "@/app/quotations/actions";
+import { reviseInvoiceAction } from "@/app/invoices/actions";
+import RevisionSerialDialog, {
+  type UnitOption,
+} from "@/components/invoice/RevisionSerialDialog";
 import type { DraftLinePayload } from "@/app/quotations/types";
 import {
   discountAmount,
@@ -53,8 +57,18 @@ interface Props {
   defaultTerms: string;
   today: string;
   validUntil: string;
-  /** Present when reopening an existing quotation. */
+  /** Present when reopening an existing quotation - or an invoice. */
   initial?: InitialQuotation;
+  /**
+   * Set when this screen is editing an issued INVOICE rather than a
+   * quotation. Saving then creates a new revision (<number>-1, -2 ...) and
+   * leaves the original untouched.
+   */
+  invoiceRevision?: {
+    invoiceId: number;
+    invoiceNo: string;
+    previousUnits: UnitOption[];
+  };
 }
 
 const cell =
@@ -77,6 +91,7 @@ export default function QuotationBuilder({
   today,
   validUntil,
   initial,
+  invoiceRevision,
 }: Props) {
   const router = useRouter();
   const [customer, setCustomer] = useState<SelectedCustomer | null>(
@@ -219,6 +234,49 @@ export default function QuotationBuilder({
     };
   }
 
+  // Invoice revisions need serial numbers chosen before they can be saved.
+  const [serialStep, setSerialStep] = useState<{ thenPdf: boolean } | null>(null);
+  const [serialError, setSerialError] = useState<string | null>(null);
+  const trackedLines = lines
+    .filter((l) => l.tracksSerials)
+    .map((l) => ({
+      key: l.key,
+      itemId: l.itemId,
+      itemCode: l.itemCode,
+      name: l.name,
+      quantity: l.quantity,
+    }));
+
+  function saveRevision(thenPdf: boolean, picked: Record<string, number[]>) {
+    if (!invoiceRevision) return;
+    const payload = buildPayload();
+    if (!customer || !payload) return;
+    setSerialError(null);
+
+    startSave(async () => {
+      const result = await reviseInvoiceAction(invoiceRevision.invoiceId, {
+        customerId: customer.id,
+        issueDate,
+        billDiscountType: payload.billDiscountType,
+        billDiscountValue: payload.billDiscountValue,
+        termsText: payload.termsText,
+        extraTerms: payload.extraTerms,
+        lines: payload.lines.map((l, i) => ({
+          ...l,
+          serialIds: lines[i].tracksSerials ? picked[lines[i].key] ?? [] : [],
+        })),
+      });
+      if (!result.ok) {
+        if (serialStep) setSerialError(result.error ?? "Could not save.");
+        else setError(result.error ?? "Could not save.");
+        return;
+      }
+      setSerialStep(null);
+      if (thenPdf) window.open(`/invoices/${result.invoiceId}/pdf`, "_blank");
+      router.push(`/invoices/${result.invoiceId}`);
+    });
+  }
+
   function save(thenPdf: boolean) {
     setError(null);
     if (!customer) return setError("Select a customer first.");
@@ -227,6 +285,12 @@ export default function QuotationBuilder({
     const payload = buildPayload();
     if (!payload) {
       return setError("Check the prices and discounts - one is not a valid amount.");
+    }
+
+    if (invoiceRevision) {
+      if (trackedLines.length > 0) setSerialStep({ thenPdf });
+      else saveRevision(thenPdf, {});
+      return;
     }
 
     startSave(async () => {
@@ -419,15 +483,17 @@ export default function QuotationBuilder({
                 className={`${cell} mt-1 w-full`}
               />
             </label>
-            <label className="text-xs text-slate-500">
-              Valid until
-              <input
-                type="date"
-                value={validUntilDate}
-                onChange={(e) => setValidUntilDate(e.target.value)}
-                className={`${cell} mt-1 w-full`}
-              />
-            </label>
+            {!invoiceRevision && (
+              <label className="text-xs text-slate-500">
+                Valid until
+                <input
+                  type="date"
+                  value={validUntilDate}
+                  onChange={(e) => setValidUntilDate(e.target.value)}
+                  className={`${cell} mt-1 w-full`}
+                />
+              </label>
+            )}
           </div>
 
           {/* Job-specific conditions sit in the open, not behind the dialog:
@@ -571,7 +637,13 @@ export default function QuotationBuilder({
               disabled={saving || totals.invalid}
               className="rounded-md border border-slate-300 px-3 py-2.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800"
             >
-              {saving ? "Saving..." : initial ? "Save changes" : "Save draft"}
+              {saving
+                ? "Saving..."
+                : invoiceRevision
+                  ? "Save revision"
+                  : initial
+                    ? "Save changes"
+                    : "Save draft"}
             </button>
             <button
               type="button"
@@ -579,11 +651,25 @@ export default function QuotationBuilder({
               disabled={saving || totals.invalid}
               className="rounded-md bg-slate-900 px-3 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             >
-              Generate PDF
+              {invoiceRevision ? "Save & PDF" : "Generate PDF"}
             </button>
           </div>
         </div>
       </aside>
+
+      {serialStep && invoiceRevision && (
+        <RevisionSerialDialog
+          lines={trackedLines}
+          previousUnits={invoiceRevision.previousUnits}
+          pending={saving}
+          error={serialError}
+          onCancel={() => {
+            setSerialStep(null);
+            setSerialError(null);
+          }}
+          onConfirm={(picked) => saveRevision(serialStep.thenPdf, picked)}
+        />
+      )}
 
       <TermsDialog
         open={termsOpen}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import PageShell from "@/components/PageShell";
+import { statusLabel } from "@/lib/status";
 import { prisma } from "@/lib/prisma";
 import { billTotals, formatLKR } from "@/lib/money";
 
@@ -110,8 +111,10 @@ export default async function CustomerDetailPage({
     ),
   );
 
+  // A superseded invoice was replaced by a revision of the same job, so only
+  // the live revision counts - otherwise an edited job is counted twice.
   const invoicedTotal = rows
-    .filter((r) => r.kind === "invoice")
+    .filter((r) => r.kind === "invoice" && r.status !== "superseded")
     .reduce((sum, r) => sum + r.total, 0);
 
   return (
@@ -185,7 +188,7 @@ export default async function CustomerDetailPage({
                         <span className="font-mono font-medium">{row.number}</span>
                       )}
                       <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-800">
-                        {row.status}
+                        {statusLabel(row.kind, row.status)}
                       </span>
                     </div>
                     <div className="text-right">

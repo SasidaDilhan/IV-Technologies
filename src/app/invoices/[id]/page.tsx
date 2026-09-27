@@ -6,7 +6,7 @@ import PaymentPanel from "@/components/invoice/PaymentPanel";
 import MarginPanel from "@/components/MarginPanel";
 import { prisma } from "@/lib/prisma";
 import { billTotals, formatLKR, lineTotal } from "@/lib/money";
-import { settlementOf } from "@/lib/invoices";
+import { revisionNumber, settlementOf } from "@/lib/invoices";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,23 @@ export default async function InvoiceDetailPage({
     payments: invoice.payments,
   });
   const state = settlementOf(totals.balanceDue, totals.paid);
+  const superseded = invoice.supersededAt !== null;
+
+  // Every invoice in this revision chain, oldest first.
+  const rootId = invoice.rootInvoiceId ?? invoice.id;
+  const chain = await prisma.invoice.findMany({
+    where: { OR: [{ id: rootId }, { rootInvoiceId: rootId }] },
+    orderBy: { id: "asc" },
+    select: { id: true, invoiceNo: true, revisionNo: true, supersededAt: true, issueDate: true },
+  });
+  const live = chain.find((c) => c.supersededAt === null);
+  const root = chain.find((c) => c.id === rootId);
+  const nextNo = root
+    ? revisionNumber(
+        root.invoiceNo,
+        chain.reduce((max, c) => Math.max(max, c.revisionNo ?? 0), 0) + 1,
+      )
+    : null;
 
   const fmt = (d: Date) =>
     d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -52,6 +69,23 @@ export default async function InvoiceDetailPage({
   return (
     <PageShell>
       <div className="space-y-6">
+        {superseded && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            <strong>Superseded.</strong> This invoice was revised
+            {invoice.supersededAt ? ` on ${invoice.supersededAt.toLocaleDateString("en-GB")}` : ""}{" "}
+            and is kept as a record, exactly as it was issued.
+            {live && (
+              <>
+                {" "}The current invoice is{" "}
+                <Link href={`/invoices/${live.id}`} className="font-mono font-semibold underline">
+                  {live.invoiceNo}
+                </Link>
+                , and payments are recorded there.
+              </>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Link href="/invoices" className="text-sm text-slate-500 hover:underline">
@@ -79,15 +113,30 @@ export default async function InvoiceDetailPage({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${
-                state.settled
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                  : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
-              }`}
-            >
-              {state.label}
-            </span>
+            {superseded ? (
+              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                superseded
+              </span>
+            ) : (
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${
+                  state.settled
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                    : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                }`}
+              >
+                {state.label}
+              </span>
+            )}
+            {!superseded && (
+              <Link
+                href={`/invoices/${invoice.id}/edit`}
+                title={nextNo ? `Saving creates ${nextNo}; this invoice is kept` : undefined}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                Edit{nextNo ? ` (creates ${nextNo})` : ""}
+              </Link>
+            )}
             <a
               href={`/invoices/${invoice.id}/pdf`}
               target="_blank"
@@ -98,6 +147,40 @@ export default async function InvoiceDetailPage({
             </a>
           </div>
         </div>
+
+        {chain.length > 1 && (
+          <div className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Revisions
+            </p>
+            <ol className="mt-2 space-y-1">
+              {chain.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-center gap-2">
+                  {c.id === invoice.id ? (
+                    <span className="font-mono font-semibold">{c.invoiceNo}</span>
+                  ) : (
+                    <Link href={`/invoices/${c.id}`} className="font-mono underline">
+                      {c.invoiceNo}
+                    </Link>
+                  )}
+                  <span className="text-xs text-slate-500">
+                    {c.issueDate.toLocaleDateString("en-GB")}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      c.supersededAt
+                        ? "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                    }`}
+                  >
+                    {c.supersededAt ? "superseded" : "current"}
+                  </span>
+                  {c.id === invoice.id && <span className="text-xs text-slate-500">(this page)</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
@@ -128,10 +211,19 @@ export default async function InvoiceDetailPage({
                     <span className="block font-mono text-xs text-slate-500">
                       {line.item.itemCode}
                     </span>
-                    {line.serialUnits.length > 0 && (
+                    {line.serialUnits.length > 0 ? (
                       <span className="block font-mono text-xs text-slate-500">
                         S/N: {line.serialUnits.map((s) => s.serialNumber).join(", ")}
                       </span>
+                    ) : (
+                      line.serialSnapshot && (
+                        <span
+                          className="block font-mono text-xs text-slate-500"
+                          title="The units listed when this invoice was issued. They now belong to the current revision."
+                        >
+                          S/N (as issued): {line.serialSnapshot}
+                        </span>
+                      )
                     )}
                     {line.note && (
                       <span className="block text-xs text-slate-500">{line.note}</span>
@@ -157,19 +249,34 @@ export default async function InvoiceDetailPage({
             billDiscountType={invoice.billDiscountType}
             billDiscountValue={invoice.billDiscountValue}
           />
-          <PaymentPanel
-            invoiceId={invoice.id}
-            balanceDue={Math.max(totals.balanceDue, 0)}
-            today={isoDate(new Date())}
-            payments={invoice.payments.map((p) => ({
-              id: p.id,
-              amount: p.amount,
-              method: p.method,
-              paidAt: p.paidAt.toLocaleDateString("en-GB"),
-              reference: p.reference,
-              note: p.note,
-            }))}
-          />
+          {superseded ? (
+            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">
+              Payments for this job are recorded on the current revision
+              {live ? (
+                <>
+                  ,{" "}
+                  <Link href={`/invoices/${live.id}`} className="font-mono underline">
+                    {live.invoiceNo}
+                  </Link>
+                </>
+              ) : null}
+              .
+            </p>
+          ) : (
+            <PaymentPanel
+              invoiceId={invoice.id}
+              balanceDue={Math.max(totals.balanceDue, 0)}
+              today={isoDate(new Date())}
+              payments={invoice.payments.map((p) => ({
+                id: p.id,
+                amount: p.amount,
+                method: p.method,
+                paidAt: p.paidAt.toLocaleDateString("en-GB"),
+                reference: p.reference,
+                note: p.note,
+              }))}
+            />
+          )}
           </div>
 
           <div className="h-fit rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
@@ -196,6 +303,12 @@ export default async function InvoiceDetailPage({
               <p className="font-mono text-3xl font-semibold tabular-nums">
                 {formatLKR(Math.max(totals.balanceDue, 0))}
               </p>
+              {totals.balanceDue < 0 && (
+                <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-400">
+                  Overpaid by {formatLKR(-totals.balanceDue)} - the customer is owed a refund
+                  or credit.
+                </p>
+              )}
             </div>
           </div>
         </div>

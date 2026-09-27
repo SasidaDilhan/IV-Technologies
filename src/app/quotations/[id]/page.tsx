@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { billTotals, formatLKR, lineTotal } from "@/lib/money";
 import PageShell from "@/components/PageShell";
+import { statusLabel } from "@/lib/status";
 import MarginPanel from "@/components/MarginPanel";
 import ConfirmDialog from "@/components/invoice/ConfirmDialog";
 
@@ -62,7 +63,7 @@ export default async function QuotationDetailPage({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-medium dark:bg-slate-800">
-              {quotation.status}
+              {statusLabel("quotation", quotation.status)}
             </span>
             <a
               href={`/quotations/${quotation.id}/pdf`}

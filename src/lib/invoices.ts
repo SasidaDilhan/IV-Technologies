@@ -226,6 +226,12 @@ export async function addPayment(
     include: { lines: true, payments: true },
   });
   if (!invoice) return { ok: false, error: "Invoice not found." };
+  if (invoice.supersededAt) {
+    return {
+      ok: false,
+      error: "This invoice was revised. Record the payment on the latest revision.",
+    };
+  }
 
   const totals = billTotals({
     lines: invoice.lines,
@@ -270,4 +276,228 @@ export function settlementOf(balanceDue: number, paid: number) {
   if (balanceDue <= 0) return { label: "paid", settled: true };
   if (paid > 0) return { label: "part paid", settled: false };
   return { label: "unpaid", settled: false };
+}
+
+// ---------------------------------------------------------------------------
+// Revisions
+// ---------------------------------------------------------------------------
+
+export interface RevisionLine {
+  itemId: number;
+  unitPrice: number;
+  costPrice: number;
+  quantity: number;
+  discountType: string;
+  discountValue: number;
+  note: string;
+  /** Required, and must match quantity, for serial-tracked items. */
+  serialIds: number[];
+}
+
+export interface RevisionPayload {
+  customerId: number;
+  issueDate: string;
+  billDiscountType: string;
+  billDiscountValue: number;
+  termsText: string;
+  extraTerms: string;
+  lines: RevisionLine[];
+}
+
+/** "INV-000001" + 2 -> "INV-000001-2". */
+export function revisionNumber(baseNo: string, revisionNo: number): string {
+  return `${baseNo}-${revisionNo}`;
+}
+
+/**
+ * Replace an issued invoice with a new revision.
+ *
+ * The old invoice is not edited. Its lines, prices and totals stay exactly as
+ * they were issued; it is only marked superseded. The new invoice takes the
+ * original number with a revision suffix - INV-000001-1, then -2 - so the
+ * chain reads naturally on paper.
+ *
+ * Two things have to move rather than be copied:
+ *  - Serial units, because a physical unit can belong to only one live bill.
+ *    Before they move, each old line records its serial numbers as text, so
+ *    the superseded invoice still shows which units it listed.
+ *  - Payments, because the customer paid against the job, and the job's live
+ *    bill is now the new revision. Each moved payment keeps the id of the
+ *    invoice it was first recorded against.
+ *
+ * All of it runs in one transaction.
+ */
+export async function reviseInvoice(
+  previousId: number,
+  payload: RevisionPayload,
+): Promise<ConvertResult> {
+  if (!payload.customerId) return { ok: false, error: "Select a customer first." };
+  if (payload.lines.length === 0) return { ok: false, error: "Add at least one item." };
+
+  let issueDate: Date;
+  try {
+    issueDate = parseDate(payload.issueDate, "Issue date");
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const previous = await tx.invoice.findUnique({
+        where: { id: previousId },
+        include: { lines: { include: { serialUnits: true } } },
+      });
+      if (!previous) throw new Error("That invoice no longer exists.");
+      if (previous.supersededAt || previous.status === "superseded") {
+        throw new Error(
+          "This invoice has already been revised. Edit the latest revision instead.",
+        );
+      }
+
+      const customer = await tx.customer.findUnique({ where: { id: payload.customerId } });
+      if (!customer) throw new Error("That customer no longer exists.");
+
+      // Number the revision from the original, not from the previous one.
+      const rootId = previous.rootInvoiceId ?? previous.id;
+      const root = await tx.invoice.findUniqueOrThrow({ where: { id: rootId } });
+      const chain = await tx.invoice.findMany({
+        where: { OR: [{ id: rootId }, { rootInvoiceId: rootId }] },
+        select: { revisionNo: true },
+      });
+      const nextRevision =
+        chain.reduce((max, inv) => Math.max(max, inv.revisionNo ?? 0), 0) + 1;
+      const invoiceNo = revisionNumber(root.invoiceNo, nextRevision);
+
+      const clash = await tx.invoice.findUnique({ where: { invoiceNo } });
+      if (clash) throw new Error(`${invoiceNo} already exists.`);
+
+      // Validate every line before anything is written.
+      const items = new Map<number, { itemCode: string; tracksSerials: boolean }>();
+      for (const line of payload.lines) {
+        const item = await tx.item.findUnique({ where: { id: line.itemId } });
+        if (!item) throw new Error(`Item ${line.itemId} no longer exists.`);
+        items.set(item.id, item);
+        if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+          throw new Error(`Quantity for ${item.itemCode} must be at least 1.`);
+        }
+        if (line.unitPrice < 0 || line.costPrice < 0) {
+          throw new Error(`Prices for ${item.itemCode} cannot be negative.`);
+        }
+        if (item.tracksSerials && line.serialIds.length !== line.quantity) {
+          throw new Error(
+            `${item.itemCode}: pick exactly ${line.quantity} serial ` +
+              `number${line.quantity === 1 ? "" : "s"} ` +
+              `(${line.serialIds.length} selected).`,
+          );
+        }
+      }
+
+      // 1. Old lines keep a written record of their units, then let them go.
+      for (const line of previous.lines) {
+        if (line.serialUnits.length === 0) continue;
+        await tx.invoiceLine.update({
+          where: { id: line.id },
+          data: {
+            serialSnapshot: line.serialUnits
+              .map((s) => s.serialNumber)
+              .sort()
+              .join(", "),
+          },
+        });
+      }
+      await tx.serialUnit.updateMany({
+        where: { invoiceLineId: { in: previous.lines.map((l) => l.id) } },
+        data: { invoiceLineId: null, status: "in_stock" },
+      });
+
+      // 2. The new revision.
+      const invoice = await tx.invoice.create({
+        data: {
+          invoiceNo,
+          customerId: payload.customerId,
+          issueDate,
+          dueDate: previous.dueDate,
+          status: "issued",
+          billDiscountType: payload.billDiscountType,
+          billDiscountValue: payload.billDiscountValue,
+          advanceAmount: 0,
+          termsText: payload.termsText,
+          extraTerms: payload.extraTerms || null,
+          rootInvoiceId: rootId,
+          revisionOfId: previous.id,
+          revisionNo: nextRevision,
+        },
+      });
+
+      for (let i = 0; i < payload.lines.length; i++) {
+        const line = payload.lines[i];
+        const item = items.get(line.itemId)!;
+        const invoiceLine = await tx.invoiceLine.create({
+          data: {
+            invoiceId: invoice.id,
+            itemId: line.itemId,
+            unitPrice: line.unitPrice,
+            costPrice: line.costPrice,
+            quantity: line.quantity,
+            lineDiscountType: line.discountType,
+            lineDiscountValue: line.discountValue,
+            note: line.note || null,
+            sortOrder: i,
+          },
+        });
+
+        if (!item.tracksSerials) continue;
+        const claimed = await tx.serialUnit.updateMany({
+          where: {
+            id: { in: line.serialIds },
+            itemId: line.itemId,
+            status: "in_stock",
+            invoiceLineId: null,
+          },
+          data: { invoiceLineId: invoiceLine.id, status: "sold" },
+        });
+        if (claimed.count !== line.serialIds.length) {
+          throw new Error(
+            `Some units for ${item.itemCode} were sold on another bill. ` +
+              `Reopen the picker and choose again.`,
+          );
+        }
+      }
+
+      // 3. Payments follow the job, remembering where they were first taken.
+      await tx.payment.updateMany({
+        where: { invoiceId: previous.id, movedFromInvoiceId: null },
+        data: { movedFromInvoiceId: previous.id },
+      });
+      await tx.payment.updateMany({
+        where: { invoiceId: previous.id },
+        data: { invoiceId: invoice.id },
+      });
+
+      // 4. The old invoice is kept, only marked as replaced.
+      await tx.invoice.update({
+        where: { id: previous.id },
+        data: { status: "superseded", supersededAt: new Date() },
+      });
+
+      return { id: invoice.id, invoiceNo };
+    });
+
+    return { ok: true, invoiceId: result.id, invoiceNo: result.invoiceNo };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message ?? "Could not revise." };
+  }
+}
+
+/** The live revision in a chain - the one bills and payments should use. */
+export async function latestRevisionId(invoiceId: number): Promise<number> {
+  const inv = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+  if (!inv) return invoiceId;
+  const rootId = inv.rootInvoiceId ?? inv.id;
+  const latest = await prisma.invoice.findFirst({
+    where: { OR: [{ id: rootId }, { rootInvoiceId: rootId }], supersededAt: null },
+    orderBy: { id: "desc" },
+    select: { id: true },
+  });
+  return latest?.id ?? invoiceId;
 }

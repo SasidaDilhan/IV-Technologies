@@ -7,14 +7,24 @@ import { settlementOf } from "@/lib/invoices";
 
 export const dynamic = "force-dynamic";
 
-export default async function InvoicesPage() {
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams: { all?: string };
+}) {
+  // Superseded revisions are kept, but hidden by default: the list is for
+  // what is live and owed.
+  const showAll = searchParams.all === "1";
   const invoices = await prisma.invoice.findMany({
-    orderBy: { issueDate: "desc" },
+    where: showAll ? undefined : { supersededAt: null },
+    orderBy: [{ issueDate: "desc" }, { id: "desc" }],
     take: 100,
     include: { customer: true, lines: true, payments: true },
   });
 
-  const outstanding = invoices.reduce((sum, inv) => {
+  const outstanding = invoices
+    .filter((inv) => inv.supersededAt === null)
+    .reduce((sum, inv) => {
     const t = billTotals({
       lines: inv.lines,
       billDiscountType: inv.billDiscountType,
@@ -34,6 +44,12 @@ export default async function InvoicesPage() {
             <p className="text-sm text-slate-500">
               Confirmed jobs. Raised by confirming a quotation.
             </p>
+            <Link
+              href={showAll ? "/invoices" : "/invoices?all=1"}
+              className="mt-1 inline-block text-xs text-slate-500 underline"
+            >
+              {showAll ? "Hide superseded revisions" : "Show superseded revisions too"}
+            </Link>
           </div>
           {invoices.length > 0 && (
             <div className="text-right">
@@ -75,8 +91,12 @@ export default async function InvoicesPage() {
                     payments: inv.payments,
                   });
                   const state = settlementOf(t.balanceDue, t.paid);
+                  const old = inv.supersededAt !== null;
                   return (
-                    <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-900">
+                    <tr
+                      key={inv.id}
+                      className={`hover:bg-slate-50 dark:hover:bg-slate-900 ${old ? "opacity-60" : ""}`}
+                    >
                       <td className="px-4 py-3 font-mono">
                         <Link href={`/invoices/${inv.id}`} className="underline">
                           {inv.invoiceNo}
@@ -92,21 +112,27 @@ export default async function InvoicesPage() {
                         {inv.issueDate.toLocaleDateString("en-GB")}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs ${
-                            state.settled
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                              : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
-                          }`}
-                        >
-                          {state.label}
-                        </span>
+                        {old ? (
+                          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                            superseded
+                          </span>
+                        ) : (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs ${
+                              state.settled
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300"
+                            }`}
+                          >
+                            {state.label}
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right font-mono">
                         {formatLKR(t.total)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right font-mono">
-                        {formatLKR(Math.max(t.balanceDue, 0))}
+                        {old ? "-" : formatLKR(Math.max(t.balanceDue, 0))}
                       </td>
                     </tr>
                   );

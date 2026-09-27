@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { formatLKR } from "@/lib/money";
 import type { HistoryDoc, HistoryResult } from "@/lib/history";
+import { statusLabel } from "@/lib/status";
 
 function StatusPill({ children }: { children: React.ReactNode }) {
   return (
@@ -33,7 +34,7 @@ function DocCard({ doc }: { doc: HistoryDoc }) {
             >
               {doc.number}
             </Link>
-            <StatusPill>{doc.status}</StatusPill>
+            <StatusPill>{statusLabel(doc.kind, doc.status)}</StatusPill>
           </div>
           <p className="mt-2 font-medium">{doc.customer.name}</p>
           <p className="font-mono text-sm text-slate-600 dark:text-slate-400">

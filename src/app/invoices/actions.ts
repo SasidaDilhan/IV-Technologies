@@ -6,6 +6,8 @@ import {
   addPayment as addPaymentCore,
   convertToInvoice as convertCore,
   deletePayment as deletePaymentCore,
+  reviseInvoice as reviseInvoiceCore,
+  type RevisionPayload,
   type ConvertInput,
   type ConvertResult,
   type PaymentInput,
@@ -41,6 +43,22 @@ export async function removePayment(id: number, invoiceId: number) {
   if (result.ok) {
     revalidatePath("/invoices");
     revalidatePath(`/invoices/${invoiceId}`);
+  }
+  return result;
+}
+
+/** Replace an issued invoice with a new revision (<original>-1, -2 ...). */
+export async function reviseInvoiceAction(
+  previousId: number,
+  payload: RevisionPayload,
+): Promise<ConvertResult> {
+  const result = await reviseInvoiceCore(previousId, payload);
+  if (result.ok) {
+    revalidatePath("/invoices");
+    revalidatePath(`/invoices/${previousId}`);
+    revalidatePath("/quotations");
+    revalidatePath("/items");
+    revalidatePath("/stock");
   }
   return result;
 }

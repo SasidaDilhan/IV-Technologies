@@ -1,0 +1,6 @@
+# Windows batch files must keep CRLF line endings on every checkout.
+# cmd.exe can misread goto labels in LF-only batch files, and update-pos.bat
+# relies on those labels for its safety stops. A git clone on a machine with
+# different line-ending settings would otherwise break them silently.
+*.bat text eol=crlf
+*.cmd text eol=crlf

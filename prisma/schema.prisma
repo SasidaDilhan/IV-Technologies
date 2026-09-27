@@ -232,6 +232,23 @@ model Invoice {
   /// Job-specific conditions, carried over from the source quotation.
   extraTerms String?
 
+  // ---- Revisions -------------------------------------------------------
+  // Editing an issued invoice never changes it. A new invoice is created in
+  // its place, numbered <original>-1, -2 ..., and the old one is kept,
+  // marked superseded. These are plain columns rather than relations on
+  // purpose: SQLite cannot add a foreign key to an existing table without
+  // rebuilding it, and this migration must run on live client data as a
+  // simple ADD COLUMN.
+
+  /// The first invoice in this chain. Null on the original itself.
+  rootInvoiceId Int?
+  /// The invoice this one replaced. Null on the original.
+  revisionOfId  Int?
+  /// 1, 2, 3 ... for revisions. Null (read as 0) on the original.
+  revisionNo    Int?
+  /// Set when a newer revision replaced this invoice.
+  supersededAt  DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -259,6 +276,11 @@ model InvoiceLine {
 
   /// Buying price at the time of sale - see QuoteLine.costPrice.
   costPrice Int @default(0)
+
+  /// Serial numbers this line carried before they moved to a newer revision
+  /// of the invoice. A unit can only belong to one live line, so the link
+  /// moves; this keeps the old revision's record of which units it listed.
+  serialSnapshot String?
   quantity  Int @default(1)
 
   lineDiscountType  String @default("fixed")
@@ -282,6 +304,10 @@ model InvoiceLine {
 model Payment {
   id        Int      @id @default(autoincrement())
   invoiceId Int
+
+  /// Where this payment was first recorded, if it has since been carried
+  /// onto a newer revision of that invoice.
+  movedFromInvoiceId Int?
   amount    Int
 
   /// "cash" | "card" | "bank_transfer" | "cheque"

@@ -25,7 +25,15 @@ export default async function CustomersPage({
       : undefined,
     orderBy: { name: "asc" },
     take: 200,
-    include: { _count: { select: { quotations: true, invoices: true } } },
+    include: {
+      _count: {
+        select: {
+          quotations: true,
+          // Revisions of one job count once.
+          invoices: { where: { supersededAt: null } },
+        },
+      },
+    },
   });
 
   return (
