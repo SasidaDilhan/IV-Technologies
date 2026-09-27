@@ -135,3 +135,56 @@ export async function updateItem(
   revalidatePath("/items");
   redirect("/items");
 }
+
+export interface QuickItemResult {
+  ok: boolean;
+  errors: FieldErrors;
+  item?: {
+    id: number;
+    itemCode: string;
+    name: string;
+    description: string | null;
+    barcode: string | null;
+    unitPrice: number;
+    costPrice: number;
+    tracksSerials: boolean;
+    available: number;
+  };
+}
+
+/**
+ * Create an item from inside the billing screen.
+ *
+ * Same validation and the same uniqueness rules as the Items page, but it
+ * returns the new item instead of navigating away - leaving the page would
+ * throw away the bill being built, which is the whole problem this solves.
+ */
+export async function quickCreateItem(form: FormData): Promise<QuickItemResult> {
+  const { errors, value } = parseItemForm(form);
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  try {
+    const item = await prisma.item.create({ data: value });
+    revalidatePath("/items");
+    return {
+      ok: true,
+      errors: {},
+      item: {
+        id: item.id,
+        itemCode: item.itemCode,
+        name: item.name,
+        description: item.description,
+        barcode: item.barcode,
+        unitPrice: item.unitPrice,
+        costPrice: item.costPrice,
+        tracksSerials: item.tracksSerials,
+        // Brand new, so nothing has been logged at stock intake yet.
+        available: 0,
+      },
+    };
+  } catch (error) {
+    const fieldErrors = uniqueFieldError(error, UNIQUE_MESSAGES);
+    if (fieldErrors) return { ok: false, errors: fieldErrors };
+    throw error;
+  }
+}

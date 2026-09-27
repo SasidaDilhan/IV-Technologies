@@ -138,6 +138,111 @@ export default function QuotationBuilder({
     });
   }
 
+  // ---- Autosave -----------------------------------------------------------
+  // A long bill is too much work to lose to a stray click on the menu, a
+  // refresh, or a power cut. The bill in progress is kept on this machine as
+  // it is typed and offered back the next time this screen opens. It lives
+  // only in this browser - nothing is written to the database until the bill
+  // is actually saved - and it is cleared the moment it is.
+  const draftKey = invoiceRevision
+    ? `pos.draft.invoice.${invoiceRevision.invoiceId}`
+    : initial
+      ? `pos.draft.quote.${initial.id}`
+      : "pos.draft.new";
+
+  interface Draft {
+    savedAt: string;
+    customer: SelectedCustomer | null;
+    lines: DraftLine[];
+    issueDate: string;
+    validUntilDate: string;
+    billDiscountType: "fixed" | "percent";
+    billDiscountValue: string;
+    terms: string;
+    extraTerms: string;
+  }
+
+  const [restorable, setRestorable] = useState<Draft | null>(null);
+  // Nothing is autosaved until the restore question is settled - otherwise
+  // the empty starting screen would overwrite the very bill being offered back.
+  const [draftReady, setDraftReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      const saved = raw ? (JSON.parse(raw) as Draft) : null;
+      if (saved && Array.isArray(saved.lines) && saved.lines.length > 0) {
+        setRestorable(saved);
+        return; // wait for Restore / Discard before autosaving
+      }
+    } catch {
+      // Unreadable draft - ignore it.
+    }
+    setDraftReady(true);
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const timer = setTimeout(() => {
+      try {
+        if (lines.length === 0) {
+          localStorage.removeItem(draftKey);
+          return;
+        }
+        const draft: Draft = {
+          savedAt: new Date().toISOString(),
+          customer,
+          lines,
+          issueDate,
+          validUntilDate,
+          billDiscountType,
+          billDiscountValue,
+          terms,
+          extraTerms,
+        };
+        localStorage.setItem(draftKey, JSON.stringify(draft));
+      } catch {
+        // Storage full or blocked - the bill still works, it just isn't kept.
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [
+    draftReady, draftKey, customer, lines, issueDate, validUntilDate,
+    billDiscountType, billDiscountValue, terms, extraTerms,
+  ]);
+
+  function restoreDraft() {
+    if (!restorable) return;
+    setCustomer(restorable.customer);
+    setLines(restorable.lines);
+    setIssueDate(restorable.issueDate);
+    setValidUntilDate(restorable.validUntilDate);
+    setBillDiscountType(restorable.billDiscountType);
+    setBillDiscountValue(restorable.billDiscountValue);
+    setTerms(restorable.terms);
+    setExtraTerms(restorable.extraTerms);
+    setRestorable(null);
+    setDraftReady(true);
+  }
+
+  function discardDraft() {
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // Nothing to remove.
+    }
+    setRestorable(null);
+    setDraftReady(true);
+  }
+
+  function clearDraft() {
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // Nothing to remove.
+    }
+  }
+
   function addLine(added: AddedLine) {
     setLines((prev) => {
       // Scanning the same model twice should raise the quantity on one line,
@@ -272,6 +377,7 @@ export default function QuotationBuilder({
         return;
       }
       setSerialStep(null);
+      clearDraft();
       if (thenPdf) window.open(`/invoices/${result.invoiceId}/pdf`, "_blank");
       router.push(`/invoices/${result.invoiceId}`);
     });
@@ -301,6 +407,7 @@ export default function QuotationBuilder({
         setError(result.error ?? "Could not save.");
         return;
       }
+      clearDraft();
       if (thenPdf) window.open(`/quotations/${result.quotationId}/pdf`, "_blank");
       router.push(`/quotations/${result.quotationId}`);
     });
@@ -310,6 +417,40 @@ export default function QuotationBuilder({
     <div className="flex h-full">
       {/* ---------------- left: entry + lines ---------------- */}
       <section className="flex min-w-0 flex-1 flex-col p-4">
+        {restorable && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            <span>
+              <strong>Unsaved bill found</strong> - {restorable.lines.length} line
+              {restorable.lines.length === 1 ? "" : "s"}
+              {restorable.customer ? ` for ${restorable.customer.name}` : ""}, last
+              changed{" "}
+              {new Date(restorable.savedAt).toLocaleString("en-GB", {
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              .
+            </span>
+            <span className="flex gap-2">
+              <button
+                type="button"
+                onClick={restoreDraft}
+                className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+              >
+                Restore it
+              </button>
+              <button
+                type="button"
+                onClick={discardDraft}
+                className="rounded-md border border-amber-400 px-3 py-1.5 text-sm hover:bg-amber-100 dark:hover:bg-amber-900"
+              >
+                Discard
+              </button>
+            </span>
+          </div>
+        )}
+
         <ScanBar onAdd={addLine} />
 
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">

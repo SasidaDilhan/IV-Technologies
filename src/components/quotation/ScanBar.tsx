@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatLKR } from "@/lib/money";
+import QuickItemDialog from "./QuickItemDialog";
 
 export interface ItemHit {
   id: number;
@@ -60,6 +61,12 @@ export default function ScanBar({ onAdd }: Props) {
   const [qtyFor, setQtyFor] = useState<ItemHit | null>(null);
   const [qty, setQty] = useState("1");
 
+  // Which query the current results belong to, so "nothing found" is only
+  // claimed once the search for THIS text has actually come back.
+  const [searchedFor, setSearchedFor] = useState("");
+  // Text to pre-fill the new-item dialog with; null when it is closed.
+  const [creating, setCreating] = useState<string | null>(null);
+
   useEffect(() => {
     if (query.trim().length < 2) {
       setHits([]);
@@ -77,6 +84,7 @@ export default function ScanBar({ onAdd }: Props) {
         const data = await res.json();
         setHits(data.items ?? []);
         setSerialExact(data.serial ?? null);
+        setSearchedFor(query.trim());
       } catch {
         // Superseded keystroke or offline.
       } finally {
@@ -122,6 +130,13 @@ export default function ScanBar({ onAdd }: Props) {
   }
 
   const showDropdown = !qtyFor && (serialExact !== null || hits.length > 0);
+  const nothingFound =
+    !qtyFor &&
+    !searching &&
+    query.trim().length >= 2 &&
+    searchedFor === query.trim() &&
+    serialExact === null &&
+    hits.length === 0;
 
   return (
     <div className="relative">
@@ -146,12 +161,61 @@ export default function ScanBar({ onAdd }: Props) {
           const exact = exactRef.current;
           if (exact) addOne(exact.item, exact.serialNumber);
           else if (hits.length === 1) choose(hits[0]);
+          // A scan that matches nothing opens "new item" with it filled in.
+          else if (nothingFound) setCreating(query.trim());
         }}
         placeholder="Scan barcode or serial, or type item name / code"
         autoComplete="off"
         spellCheck={false}
-        className={`${field} h-14 text-base`}
+        className={`${field} h-14 pr-32 text-base`}
       />
+      <button
+        type="button"
+        onClick={() => setCreating(query.trim())}
+        title="Create a new catalogue item without leaving this bill"
+        className="absolute right-2 top-2 h-10 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+      >
+        + New item
+      </button>
+
+      {nothingFound && (
+        <div className="absolute inset-x-0 top-16 z-30 rounded-lg border border-slate-300 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+          <p className="text-sm">
+            No item matches <span className="font-mono font-medium">{query.trim()}</span>.
+          </p>
+          <button
+            type="button"
+            onClick={() => setCreating(query.trim())}
+            className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900"
+          >
+            Create it and add to this bill
+          </button>
+          <span className="ml-2 text-xs text-slate-500">or press Enter</span>
+        </div>
+      )}
+
+      {creating !== null && (
+        <QuickItemDialog
+          seed={creating}
+          onCancel={() => {
+            setCreating(null);
+            inputRef.current?.focus();
+          }}
+          onCreated={(item) => {
+            setCreating(null);
+            onAdd({ item, quantity: 1 });
+            setFlash({
+              kind: "ok",
+              text:
+                `Created ${item.itemCode} and added it to this bill.` +
+                (item.tracksSerials
+                  ? " Log its serial numbers at Stock intake before invoicing."
+                  : ""),
+            });
+            reset();
+          }}
+        />
+      )}
 
       {flash && (
         <p
