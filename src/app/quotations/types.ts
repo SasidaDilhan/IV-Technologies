@@ -15,6 +15,12 @@ export interface DraftLinePayload {
   itemId: number;
   /** Cents. Snapshot of the price agreed for this bill. */
   unitPrice: number;
+  /**
+   * Cents. The buying price the operator was shown when the line was added -
+   * from the catalogue for a new line, from the stored snapshot when a
+   * quotation is reopened. Internal; never printed.
+   */
+  costPrice: number;
   quantity: number;
   discountType: string;
   discountValue: number;

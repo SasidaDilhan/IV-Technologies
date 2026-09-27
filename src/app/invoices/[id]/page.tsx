@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import PageShell from "@/components/PageShell";
 import PaymentPanel from "@/components/invoice/PaymentPanel";
+import MarginPanel from "@/components/MarginPanel";
 import { prisma } from "@/lib/prisma";
 import { billTotals, formatLKR, lineTotal } from "@/lib/money";
 import { settlementOf } from "@/lib/invoices";
@@ -150,6 +151,12 @@ export default async function InvoiceDetailPage({
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-4">
+          <MarginPanel
+            lines={invoice.lines}
+            billDiscountType={invoice.billDiscountType}
+            billDiscountValue={invoice.billDiscountValue}
+          />
           <PaymentPanel
             invoiceId={invoice.id}
             balanceDue={Math.max(totals.balanceDue, 0)}
@@ -163,6 +170,7 @@ export default async function InvoiceDetailPage({
               note: p.note,
             }))}
           />
+          </div>
 
           <div className="h-fit rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
             <div className="flex justify-between py-1">

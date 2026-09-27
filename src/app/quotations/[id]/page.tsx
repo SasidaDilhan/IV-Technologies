@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { billTotals, formatLKR, lineTotal } from "@/lib/money";
 import PageShell from "@/components/PageShell";
+import MarginPanel from "@/components/MarginPanel";
 import ConfirmDialog from "@/components/invoice/ConfirmDialog";
 
 export const dynamic = "force-dynamic";
@@ -152,7 +153,14 @@ export default async function QuotationDetailPage({
           </table>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-start justify-end gap-4">
+          <div className="w-full max-w-xs">
+            <MarginPanel
+              lines={quotation.lines}
+              billDiscountType={quotation.billDiscountType}
+              billDiscountValue={quotation.billDiscountValue}
+            />
+          </div>
           <div className="w-full max-w-sm space-y-2 rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
             <div className="flex justify-between">
               <span className="text-slate-500">Subtotal</span>

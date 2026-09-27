@@ -25,6 +25,7 @@ interface ParsedItem {
   name: string;
   description: string | null;
   barcode: string | null;
+  costPrice: number;
   unitPrice: number;
   tracksSerials: boolean;
 }
@@ -40,6 +41,7 @@ function parseItemForm(form: FormData): {
   const description = str(form, "description");
   const barcodeRaw = str(form, "barcode");
   const priceRaw = str(form, "unitPrice");
+  const costRaw = str(form, "costPrice");
   const tracksSerials = bool(form, "tracksSerials");
 
   if (!itemCode) errors.itemCode = "Item code is required.";
@@ -54,6 +56,18 @@ function parseItemForm(form: FormData): {
     errors.unitPrice = "Price cannot be negative.";
   }
 
+  // Buying price is optional - labour and services have none - but when it is
+  // given it must be a real amount.
+  let costCents = 0;
+  if (costRaw) {
+    const costRupees = parseRupees(costRaw);
+    if (Number.isNaN(costRupees)) {
+      errors.costPrice = "Enter a number, e.g. 9000 or 9000.50";
+    } else {
+      costCents = toCents(costRupees);
+    }
+  }
+
   return {
     errors,
     value: {
@@ -61,6 +75,7 @@ function parseItemForm(form: FormData): {
       name,
       description: description || null,
       barcode: barcodeRaw || null,
+      costPrice: costCents,
       unitPrice: Number.isNaN(rupees) ? 0 : toCents(rupees),
       tracksSerials,
     },

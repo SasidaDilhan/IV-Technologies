@@ -131,6 +131,9 @@ export async function convertToInvoice(
             invoiceId: invoice.id,
             itemId: line.itemId,
             unitPrice: line.unitPrice,
+            // The quotation's snapshot carries over, so the invoice margin is
+            // measured against what the goods cost when the job was priced.
+            costPrice: line.costPrice,
             quantity: line.quantity,
             lineDiscountType: line.lineDiscountType,
             lineDiscountValue: line.lineDiscountValue,

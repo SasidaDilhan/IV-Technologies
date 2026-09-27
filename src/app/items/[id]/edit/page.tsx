@@ -48,6 +48,7 @@ export default async function EditItemPage({
             description: item.description ?? "",
             barcode: item.barcode ?? "",
             unitPrice: toRupees(item.unitPrice).toFixed(2),
+            costPrice: item.costPrice ? toRupees(item.costPrice).toFixed(2) : "",
             tracksSerials: item.tracksSerials,
           }}
         />

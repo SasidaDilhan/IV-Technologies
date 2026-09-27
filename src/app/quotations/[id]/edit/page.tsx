@@ -89,6 +89,7 @@ export default async function EditQuotationPage({
               name: line.item.name,
               tracksSerials: line.item.tracksSerials,
               unitPrice: toRupees(line.unitPrice).toFixed(2),
+              costPrice: line.costPrice,
               quantity: line.quantity,
               discountType:
                 line.lineDiscountType === "percent" ? "percent" : "fixed",

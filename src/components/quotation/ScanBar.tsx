@@ -11,6 +11,7 @@ export interface ItemHit {
   description: string | null;
   barcode: string | null;
   unitPrice: number;
+  costPrice: number;
   tracksSerials: boolean;
   available: number;
 }

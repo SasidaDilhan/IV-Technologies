@@ -151,3 +151,72 @@ export function formatDiscountInput(type: string, value: number): string {
   if (!value) return "";
   return type === "percent" ? String(value / 100) : String(value / 100);
 }
+
+// ---------------------------------------------------------------------------
+// Margin
+//
+// Internal figures only. They are shown while a bill is being built and on the
+// bill's own screen, and never appear on a customer-facing document.
+// ---------------------------------------------------------------------------
+
+export interface MarginLineLike extends BillLineLike {
+  /** Buying price per unit, in cents, as snapshotted on the line. */
+  costPrice: number;
+}
+
+export interface Margin {
+  /** What the goods cost, in cents. */
+  cost: number;
+  /** What the customer is charged, after discounts, in cents. */
+  revenue: number;
+  /** revenue - cost. Negative means the bill loses money. */
+  margin: number;
+  /**
+   * Margin as a percentage of revenue, to one decimal place, or null when
+   * there is no revenue to divide by - a free line has no meaningful
+   * percentage, and dividing by zero would print Infinity on the till.
+   */
+  marginPct: number | null;
+}
+
+function shape(cost: number, revenue: number): Margin {
+  const margin = revenue - cost;
+  return {
+    cost,
+    revenue,
+    margin,
+    marginPct: revenue === 0 ? null : Math.round((margin / revenue) * 1000) / 10,
+  };
+}
+
+/** Margin on a single bill line, after that line's own discount. */
+export function lineMargin(line: MarginLineLike): Margin {
+  return shape(line.costPrice * line.quantity, lineTotal(line));
+}
+
+/**
+ * Margin across a whole bill.
+ *
+ * The bill-level discount comes off the revenue but never off the cost - the
+ * shop still paid for the goods - so discounting a job eats directly into the
+ * margin. That is exactly the number the person pricing the job needs to see.
+ */
+export function billMargin(input: {
+  lines: MarginLineLike[];
+  billDiscountType: string;
+  billDiscountValue: number;
+}): Margin {
+  const cost = input.lines.reduce((sum, l) => sum + l.costPrice * l.quantity, 0);
+  const totals = billTotals({
+    lines: input.lines,
+    billDiscountType: input.billDiscountType,
+    billDiscountValue: input.billDiscountValue,
+  });
+  return shape(cost, totals.total);
+}
+
+/** "+27.4%" / "-3.1%" / "-" when there is no revenue to measure against. */
+export function formatMarginPct(pct: number | null): string {
+  if (pct === null) return "-";
+  return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}

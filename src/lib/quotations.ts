@@ -23,6 +23,7 @@ async function validatedLines(
   const out: {
     itemId: number;
     unitPrice: number;
+    costPrice: number;
     quantity: number;
     lineDiscountType: string;
     lineDiscountValue: number;
@@ -41,10 +42,14 @@ async function validatedLines(
     if (line.unitPrice < 0) {
       throw new Error(`Unit price for ${item.itemCode} cannot be negative.`);
     }
+    if (!Number.isInteger(line.costPrice) || line.costPrice < 0) {
+      throw new Error(`Buying price for ${item.itemCode} is not valid.`);
+    }
 
     out.push({
       itemId: item.id,
       unitPrice: line.unitPrice,
+      costPrice: line.costPrice,
       quantity: line.quantity,
       lineDiscountType: line.discountType,
       lineDiscountValue: line.discountValue,

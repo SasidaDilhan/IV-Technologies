@@ -1,11 +1,16 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { reviseQuotation, saveQuotation } from "@/app/quotations/actions";
 import type { DraftLinePayload } from "@/app/quotations/types";
-import { discountAmount, formatLKR, parseDiscountInput } from "@/lib/money";
+import {
+  discountAmount,
+  formatLKR,
+  formatMarginPct,
+  parseDiscountInput,
+} from "@/lib/money";
 import ScanBar, { type AddedLine } from "./ScanBar";
 import CustomerPanel, { type SelectedCustomer } from "./CustomerPanel";
 import TermsDialog from "./TermsDialog";
@@ -18,6 +23,12 @@ export interface DraftLine {
   tracksSerials: boolean;
   /** Rupees as typed, so the operator sees exactly what they entered. */
   unitPrice: string;
+  /**
+   * Cents, per unit. Taken from the catalogue when the line is added, or from
+   * the stored snapshot when a quotation is reopened. Shown to the operator,
+   * never printed.
+   */
+  costPrice: number;
   quantity: number;
   discountType: "fixed" | "percent";
   discountValue: string;
@@ -88,6 +99,30 @@ export default function QuotationBuilder({
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
 
+  // The customer often stands across the counter from this screen, so the
+  // operator can hide cost and margin. The choice is remembered on this
+  // machine. Loaded in an effect, not the initial state, so the server render
+  // and the first client render agree.
+  const [showMargin, setShowMargin] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("pos.showMargin") === "0") setShowMargin(false);
+    } catch {
+      // Storage blocked - keep the default.
+    }
+  }, []);
+  function toggleMargin() {
+    setShowMargin((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("pos.showMargin", next ? "1" : "0");
+      } catch {
+        // Not remembered, but still toggled for this session.
+      }
+      return next;
+    });
+  }
+
   function addLine(added: AddedLine) {
     setLines((prev) => {
       // Scanning the same model twice should raise the quantity on one line,
@@ -111,6 +146,7 @@ export default function QuotationBuilder({
           name: added.item.name,
           tracksSerials: added.item.tracksSerials,
           unitPrice: (added.item.unitPrice / 100).toFixed(2),
+          costPrice: added.item.costPrice,
           quantity: added.quantity,
           discountType: "fixed",
           discountValue: "",
@@ -137,7 +173,16 @@ export default function QuotationBuilder({
     const billDisc = parseDiscountInput(billDiscountType, billDiscountValue);
     if (!billDisc) invalid = true;
     const discount = billDisc ? discountAmount(subtotal, billDisc.type, billDisc.value) : 0;
-    return { subtotal, discount, total: subtotal - discount, invalid };
+    const total = subtotal - discount;
+
+    // The bill discount comes off the revenue but not the cost - the shop
+    // still paid for the goods - so it eats straight into the margin.
+    const cost = lines.reduce((sum, l) => sum + l.costPrice * l.quantity, 0);
+    const margin = total - cost;
+    const marginPct = total === 0 ? null : Math.round((margin / total) * 1000) / 10;
+    const uncosted = lines.filter((l) => l.costPrice === 0).length;
+
+    return { subtotal, discount, total, invalid, cost, margin, marginPct, uncosted };
   }, [lines, billDiscountType, billDiscountValue]);
 
   const unitCount = lines.reduce((n, l) => n + l.quantity, 0);
@@ -154,6 +199,7 @@ export default function QuotationBuilder({
       payloadLines.push({
         itemId: line.itemId,
         unitPrice: price.value,
+        costPrice: line.costPrice,
         quantity: line.quantity,
         discountType: disc.type,
         discountValue: disc.value,
@@ -288,6 +334,38 @@ export default function QuotationBuilder({
                       ) : (
                         formatLKR(cents)
                       )}
+                      {showMargin && cents !== null && (() => {
+                        if (line.costPrice === 0) {
+                          return (
+                            <span className="mt-0.5 block text-[11px] text-slate-400">
+                              no buying price
+                            </span>
+                          );
+                        }
+                        const lineCost = line.costPrice * line.quantity;
+                        const lineMarginCents = cents - lineCost;
+                        const pct =
+                          cents === 0
+                            ? null
+                            : Math.round((lineMarginCents / cents) * 1000) / 10;
+                        return (
+                          <span className="mt-0.5 block text-[11px] leading-tight">
+                            <span className="block text-slate-500">
+                              cost {formatLKR(lineCost)}
+                            </span>
+                            <span
+                              className={
+                                lineMarginCents < 0
+                                  ? "block font-medium text-red-600 dark:text-red-400"
+                                  : "block text-emerald-700 dark:text-emerald-400"
+                              }
+                            >
+                              {lineMarginCents < 0 ? "" : "+"}
+                              {formatLKR(lineMarginCents)} {formatMarginPct(pct)}
+                            </span>
+                          </span>
+                        );
+                      })()}
                     </span>
 
                     <button
@@ -424,6 +502,61 @@ export default function QuotationBuilder({
               {formatLKR(totals.total)}
             </p>
           </div>
+
+          {/* Internal only. Never reaches the printed document. */}
+          {lines.length > 0 && (
+            <div className="mt-3 rounded-md border border-dashed border-slate-300 px-3 py-2 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Internal - not printed
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleMargin}
+                  className="text-[11px] text-slate-500 underline hover:text-slate-800 dark:hover:text-slate-200"
+                >
+                  {showMargin ? "Hide" : "Show margin"}
+                </button>
+              </div>
+
+              {showMargin && (
+                <div className="mt-1.5 space-y-0.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Buying cost</span>
+                    <span className="font-mono">{formatLKR(totals.cost)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Selling total</span>
+                    <span className="font-mono">{formatLKR(totals.total)}</span>
+                  </div>
+                  <div
+                    className={`flex justify-between font-semibold ${
+                      totals.margin < 0
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-emerald-700 dark:text-emerald-400"
+                    }`}
+                  >
+                    <span>Margin</span>
+                    <span className="font-mono">
+                      {formatLKR(totals.margin)} {formatMarginPct(totals.marginPct)}
+                    </span>
+                  </div>
+                  {totals.margin < 0 && (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      This bill sells below cost.
+                    </p>
+                  )}
+                  {totals.uncosted > 0 && (
+                    <p className="text-xs text-slate-500">
+                      {totals.uncosted} line{totals.uncosted === 1 ? " has" : "s have"} no
+                      buying price and count as zero cost, so the margin may be
+                      overstated.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {error && (
             <p className="mt-3 rounded-md bg-red-100 px-3 py-2 text-sm text-red-900 dark:bg-red-950 dark:text-red-300">

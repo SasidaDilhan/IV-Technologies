@@ -19,6 +19,7 @@ const serialSelect = {
       description: true,
       barcode: true,
       unitPrice: true,
+      costPrice: true,
       tracksSerials: true,
     },
   },
@@ -37,6 +38,7 @@ type SerialRow = {
     description: string | null;
     barcode: string | null;
     unitPrice: number;
+    costPrice: number;
     tracksSerials: boolean;
   };
 };
@@ -126,6 +128,7 @@ export async function GET(request: Request) {
       description: item.description,
       barcode: item.barcode,
       unitPrice: item.unitPrice,
+      costPrice: item.costPrice,
       tracksSerials: item.tracksSerials,
       available: item._count.serialUnits,
     })),

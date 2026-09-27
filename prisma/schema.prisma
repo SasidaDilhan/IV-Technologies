@@ -57,6 +57,10 @@ model Item {
   barcode   String? @unique
   unitPrice Int
 
+  /// What the shop pays for one of these. Internal only - it drives the margin
+  /// shown while billing and is never printed on a customer document.
+  costPrice Int @default(0)
+
   /// Standing description - warranty, what is included, how it is charged.
   /// Copied onto a bill line as its starting note, where it can be edited for
   /// that bill without changing the catalogue.
@@ -165,6 +169,11 @@ model QuoteLine {
   /// independent of Item.unitPrice.
   unitPrice Int
 
+  /// The buying price AT THE TIME OF THIS BILL. Snapshotted for the same
+  /// reason as unitPrice: if the cost changes next month, the margin on a
+  /// document already issued must still show what was actually paid.
+  costPrice Int @default(0)
+
   /// For serial-tracked items this must equal serialUnits.length;
   /// the application keeps the two in step.
   quantity Int @default(1)
@@ -247,6 +256,9 @@ model InvoiceLine {
   itemId    Int
 
   unitPrice Int
+
+  /// Buying price at the time of sale - see QuoteLine.costPrice.
+  costPrice Int @default(0)
   quantity  Int @default(1)
 
   lineDiscountType  String @default("fixed")

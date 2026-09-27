@@ -1,13 +1,27 @@
 import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
-import { formatLKR } from "@/lib/money";
+import { formatLKR, formatMarginPct } from "@/lib/money";
 import PageShell from "@/components/PageShell";
 
 export const dynamic = "force-dynamic";
 
-export default async function ItemsPage() {
+export default async function ItemsPage({
+  searchParams,
+}: {
+  searchParams: { q?: string };
+}) {
+  const q = (searchParams.q ?? "").trim();
   const items = await prisma.item.findMany({
+    where: q
+      ? {
+          OR: [
+            { name: { contains: q } },
+            { itemCode: { contains: q } },
+            { barcode: { contains: q } },
+          ],
+        }
+      : undefined,
     orderBy: { itemCode: "asc" },
     include: {
       // Units on the shelf. Quotations do not hold stock, so this is also
@@ -47,9 +61,32 @@ export default async function ItemsPage() {
           </div>
         </div>
 
+        <form method="get" className="flex gap-2">
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Search by name, item code or barcode"
+            autoComplete="off"
+            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+          <button
+            type="submit"
+            className="whitespace-nowrap rounded-md border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            Search
+          </button>
+          {q && (
+            <Link href="/items" className="flex items-center px-2 text-sm text-slate-500 underline">
+              Clear
+            </Link>
+          )}
+        </form>
+
         {items.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center dark:border-slate-700">
-            <p className="text-slate-500">No items yet.</p>
+            <p className="text-slate-500">
+              {q ? `No item matches "${q}".` : "No items yet."}
+            </p>
             <Link
               href="/items/new"
               className="mt-2 inline-block text-sm font-medium underline"
@@ -65,7 +102,9 @@ export default async function ItemsPage() {
                   <th className="px-4 py-3 font-medium">Code</th>
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Barcode</th>
-                  <th className="px-4 py-3 text-right font-medium">Price</th>
+                  <th className="px-4 py-3 text-right font-medium">Buying</th>
+                  <th className="px-4 py-3 text-right font-medium">Selling</th>
+                  <th className="px-4 py-3 text-right font-medium">Margin</th>
                   <th className="px-4 py-3 text-right font-medium">In stock</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -87,8 +126,34 @@ export default async function ItemsPage() {
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-slate-500">
                       {item.barcode ?? "-"}
                     </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-slate-500">
+                      {item.costPrice ? formatLKR(item.costPrice) : "-"}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right font-mono">
                       {formatLKR(item.unitPrice)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-mono">
+                      {(() => {
+                        // Margin is buying vs selling as entered on the item.
+                        if (!item.costPrice) return <span className="text-slate-400">-</span>;
+                        const m = item.unitPrice - item.costPrice;
+                        const pct =
+                          item.unitPrice === 0
+                            ? null
+                            : Math.round((m / item.unitPrice) * 1000) / 10;
+                        return (
+                          <span
+                            className={
+                              m < 0
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-emerald-700 dark:text-emerald-400"
+                            }
+                          >
+                            {formatLKR(m)}
+                            <span className="block text-xs">{formatMarginPct(pct)}</span>
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       {item.tracksSerials ? (
@@ -110,7 +175,7 @@ export default async function ItemsPage() {
                         href={`/items/${item.id}/edit`}
                         className="text-sm underline"
                       >
-                        Edit
+                        Edit prices
                       </Link>
                     </td>
                   </tr>
