@@ -220,3 +220,24 @@ export function formatMarginPct(pct: number | null): string {
   if (pct === null) return "-";
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
+
+/**
+ * Selling price that gives a margin of `marginPct` on the SELLING price - the
+ * same way margin is shown everywhere else in the app - rounded UP to the
+ * whole rupee so the margin is never below what was asked for.
+ *
+ *   cost 6,000 at 25% margin -> 8,000   (8,000 - 6,000 = 2,000 = 25% of 8,000)
+ *
+ * Returns null for a margin of 100% or more, which no price can reach.
+ */
+export function sellingPriceForMargin(costCents: number, marginPct: number): number | null {
+  if (!(marginPct < 100) || costCents <= 0) return null;
+  const exact = costCents / (1 - marginPct / 100);
+  return Math.ceil(exact / 100) * 100;
+}
+
+/** Markup: profit as a percentage of COST. 6,000 -> 8,000 is a 33.3% markup. */
+export function markupPct(sellCents: number, costCents: number): number | null {
+  if (costCents <= 0) return null;
+  return Math.round(((sellCents - costCents) / costCents) * 1000) / 10;
+}

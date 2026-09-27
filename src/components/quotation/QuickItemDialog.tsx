@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 
 import { quickCreateItem, type QuickItemResult } from "@/app/items/actions";
-import { formatLKR, formatMarginPct, parseDiscountInput } from "@/lib/money";
+import PriceMarginFields from "@/components/PriceMarginFields";
 import { normaliseSerial } from "@/lib/validation";
 
 type NewItem = NonNullable<QuickItemResult["item"]>;
@@ -56,13 +56,11 @@ export default function QuickItemDialog({ seed, onCancel, onCreated }: Props) {
 
   const codeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const priceRef = useRef<HTMLInputElement>(null);
 
   // Put the cursor in the first field that still needs filling.
   useEffect(() => {
     if (!initial.itemCode) codeRef.current?.focus();
     else if (!initial.name) nameRef.current?.focus();
-    else priceRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !pending) onCancel();
     };
@@ -72,15 +70,6 @@ export default function QuickItemDialog({ seed, onCancel, onCreated }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const sellCents = parseDiscountInput("fixed", sell)?.value ?? null;
-  const costCents = parseDiscountInput("fixed", cost)?.value ?? null;
-  const margin =
-    sellCents && costCents
-      ? {
-          value: sellCents - costCents,
-          pct: Math.round(((sellCents - costCents) / sellCents) * 1000) / 10,
-        }
-      : null;
 
   // The units being logged, as the server will read them: one per line,
   // normalised, duplicates in the list collapsed.
@@ -147,22 +136,18 @@ export default function QuickItemDialog({ seed, onCancel, onCreated }: Props) {
             <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} className={`${field} mt-1`} autoComplete="off" />
             {err("name")}
           </label>
-          <label className="text-xs text-slate-500">
-            Selling price (LKR)
-            <input ref={priceRef} value={sell} onChange={(e) => setSell(e.target.value)} inputMode="decimal" placeholder="0.00" className={`${field} mt-1 text-right font-mono`} autoComplete="off" />
-            {err("unitPrice")}
-          </label>
-          <label className="text-xs text-slate-500">
-            Buying price (LKR) <span className="text-slate-400">- not printed</span>
-            <input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" placeholder="optional" className={`${field} mt-1 text-right font-mono`} autoComplete="off" />
-            {err("costPrice")}
-          </label>
-          {margin && (
-            <p className={`text-xs sm:col-span-2 ${margin.value < 0 ? "text-red-600 dark:text-red-400" : "text-slate-500"}`}>
-              Margin per unit: {formatLKR(margin.value)} ({formatMarginPct(margin.pct)})
-              {margin.value < 0 && " - selling below cost"}
-            </p>
-          )}
+          <div className="sm:col-span-2">
+            <PriceMarginFields
+              sell={sell}
+              setSell={setSell}
+              cost={cost}
+              setCost={setCost}
+              sellError={errors.unitPrice}
+              costError={errors.costPrice}
+              inputClass={field}
+              labelClass="block text-xs text-slate-500"
+            />
+          </div>
           <label className="text-xs text-slate-500 sm:col-span-2">
             Description <span className="text-slate-400">(optional, printed under the name)</span>
             <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="3 Months Warranty" className={`${field} mt-1`} autoComplete="off" />
