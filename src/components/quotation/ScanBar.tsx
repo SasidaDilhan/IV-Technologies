@@ -201,15 +201,17 @@ export default function ScanBar({ onAdd }: Props) {
             setCreating(null);
             inputRef.current?.focus();
           }}
-          onCreated={(item) => {
+          onCreated={(item, quantity) => {
             setCreating(null);
-            onAdd({ item, quantity: 1 });
+            onAdd({ item, quantity });
             setFlash({
               kind: "ok",
               text:
-                `Created ${item.itemCode} and added it to this bill.` +
+                `Created ${item.itemCode} and added ${quantity} to this bill.` +
                 (item.tracksSerials
-                  ? " Log its serial numbers at Stock intake before invoicing."
+                  ? item.available > 0
+                    ? ` ${item.available} unit${item.available === 1 ? "" : "s"} added to stock.`
+                    : " No stock logged yet - add serial numbers at Stock intake before invoicing."
                   : ""),
             });
             reset();

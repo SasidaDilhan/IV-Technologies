@@ -9,6 +9,7 @@ import { toCents } from "@/lib/money";
 import {
   bool,
   normaliseCode,
+  normaliseSerial,
   parseRupees,
   str,
   uniqueFieldError,
@@ -161,11 +162,61 @@ export interface QuickItemResult {
  */
 export async function quickCreateItem(form: FormData): Promise<QuickItemResult> {
   const { errors, value } = parseItemForm(form);
+
+  // Serial numbers to put in stock with the new item - one per line, the way
+  // a scanner types them. Only meaningful for serial-tracked items; an
+  // untracked item needs no stock to be billed.
+  const serials = value.tracksSerials
+    ? Array.from(
+        new Set(
+          str(form, "serials")
+            .split(/[\r\n,]+/)
+            .map(normaliseSerial)
+            .filter((s) => s.length > 0),
+        ),
+      )
+    : [];
+
+  const tooShort = serials.filter((s) => s.length < 3);
+  if (tooShort.length > 0) {
+    errors.serials = `Too short to be a serial number: ${tooShort.join(", ")}`;
+  }
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
+  if (serials.length > 0) {
+    const taken = await prisma.serialUnit.findMany({
+      where: { serialNumber: { in: serials } },
+      select: { serialNumber: true, item: { select: { itemCode: true } } },
+    });
+    if (taken.length > 0) {
+      return {
+        ok: false,
+        errors: {
+          serials:
+            "Already recorded: " +
+            taken.map((s) => `${s.serialNumber} (${s.item.itemCode})`).join(", "),
+        },
+      };
+    }
+  }
+
   try {
-    const item = await prisma.item.create({ data: value });
+    // Item and its units together: either both are saved or neither is.
+    const item = await prisma.$transaction(async (tx) => {
+      const created = await tx.item.create({ data: value });
+      if (serials.length > 0) {
+        await tx.serialUnit.createMany({
+          data: serials.map((serialNumber) => ({
+            serialNumber,
+            itemId: created.id,
+            status: "in_stock",
+          })),
+        });
+      }
+      return created;
+    });
     revalidatePath("/items");
+    revalidatePath("/stock");
     return {
       ok: true,
       errors: {},
@@ -178,13 +229,19 @@ export async function quickCreateItem(form: FormData): Promise<QuickItemResult> 
         unitPrice: item.unitPrice,
         costPrice: item.costPrice,
         tracksSerials: item.tracksSerials,
-        // Brand new, so nothing has been logged at stock intake yet.
-        available: 0,
+        available: serials.length,
       },
     };
   } catch (error) {
-    const fieldErrors = uniqueFieldError(error, UNIQUE_MESSAGES);
-    if (fieldErrors) return { ok: false, errors: fieldErrors };
+    const fieldErrors = uniqueFieldError(error, {
+      ...UNIQUE_MESSAGES,
+      // Another till logged the same unit between the check above and now.
+      serialNumber: "One of these serial numbers was just recorded elsewhere.",
+    });
+    if (fieldErrors) {
+      if (fieldErrors.serialNumber) return { ok: false, errors: { serials: fieldErrors.serialNumber } };
+      return { ok: false, errors: fieldErrors };
+    }
     throw error;
   }
 }
