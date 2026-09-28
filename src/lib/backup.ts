@@ -61,6 +61,31 @@ export function databasePath(): string {
   return path.isAbsolute(file) ? file : path.resolve("prisma", file);
 }
 
+/**
+ * Where Google Drive for desktop puts "My Drive" on this PC, if it is
+ * installed and signed in - usually G:\My Drive. Files saved there upload to
+ * the owner's Google Drive by themselves.
+ */
+export function findGoogleDrive(): string | null {
+  if (process.platform !== "win32") return null;
+  for (const letter of "GDEFHIJKLMNOPQRSTUVWXYZ") {
+    const p = `${letter}:\\My Drive`;
+    try {
+      if (fs.statSync(p).isDirectory()) return p;
+    } catch {
+      // no such drive, or not Google Drive
+    }
+  }
+  // Older "Backup and Sync" kept it in the user's profile.
+  const legacy = path.join(process.env.USERPROFILE ?? "", "Google Drive");
+  try {
+    if (process.env.USERPROFILE && fs.statSync(legacy).isDirectory()) return legacy;
+  } catch {
+    // not there either
+  }
+  return null;
+}
+
 export function getBackupFolder(): string | null {
   try {
     const line = fs.readFileSync(path.resolve(FOLDER_FILE), "utf8").split(/\r?\n/)[0].trim();

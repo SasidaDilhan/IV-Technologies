@@ -3,7 +3,7 @@ import fs from "node:fs";
 import BackupPanel from "@/components/BackupPanel";
 import PageShell from "@/components/PageShell";
 import SettingsForm from "@/components/SettingsForm";
-import { getBackupFolder, listBackups } from "@/lib/backup";
+import { findGoogleDrive, getBackupFolder, listBackups, localBackupDir } from "@/lib/backup";
 import { getSettings } from "@/lib/settings";
 
 const ago = (d: Date | undefined) =>
@@ -55,6 +55,8 @@ export default async function SettingsPage() {
         />
 
         <BackupPanel
+          localDir={localBackupDir()}
+          googleDrive={findGoogleDrive()}
           folder={folder}
           lastLocal={ago(local[0]?.modified)}
           lastFolder={ago(copies[0]?.modified)}
