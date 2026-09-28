@@ -48,3 +48,6 @@ backups/
 
 # generated handover database
 handover/
+
+# the shop's chosen second backup folder (set in Settings)
+backup-folder.txt

@@ -85,9 +85,14 @@ Everything lives in one file:  prisma\\dev.db
 A backup is taken automatically every time you start the
 system, into the "backups" folder.
 
-IMPORTANT: copy those backups somewhere off this computer -
-a USB stick, or a Google Drive folder. A backup on the same
-disk does not survive the disk failing.
+IMPORTANT: keep a second copy off this computer. Open
+Settings -> Backups, enter a folder on another drive, a USB
+stick or Google Drive, and press "Save folder". Every backup
+is then saved in both places. Press "Back up now" at the end
+of a busy day.
+
+To put a backup back: close the system, double-click
+RESTORE.bat, press Enter for the newest backup, type YES.
 
 Full instructions are in README.md.
 `;
@@ -113,8 +118,19 @@ To apply it:
 
 4. Start the system again with  START.bat
 
-If anything goes wrong, the backup taken in step 3 is in the
-"backups" folder - restoring it is explained in README.md.
+If anything goes wrong, close the system and double-click
+RESTORE.bat - it puts back the backup taken in step 3.
+
+
+Backups
+-------
+
+A backup is taken every time the system starts. In Settings ->
+Backups you can also choose a second folder (another drive, a
+USB stick or Google Drive) and press "Back up now" at any time.
+
+To put a backup back: close the system, double-click RESTORE.bat,
+press Enter for the newest backup, and type YES.
 `;
 
 function main() {

@@ -11,6 +11,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "db:backup": "tsx scripts/backup.ts",
+    "db:restore": "tsx scripts/restore.ts",
     "db:handover": "tsx scripts/prepare-handover.ts",
     "package": "tsx scripts/package-handover.ts",
     "verify:package": "tsx scripts/verify-package.ts"

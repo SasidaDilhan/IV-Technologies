@@ -66,22 +66,18 @@ that has already been issued.
 **The entire system's data is one file: `prisma/dev.db`.** Copying that file is
 the whole backup.
 
-`start-pos.bat` backs up automatically on every start. To run one by hand:
-
-```
-npm run db:backup
-```
+`START.bat` backs up automatically on every start. To take one at any other
+time - worth doing at the end of a busy day - press **Back up now** in
+Settings, or double-click `BACKUP.bat`.
 
 Backups land in `backups/`, named by date and time, and the last 30 are kept.
 
-Send them somewhere off the machine — a dated folder on Google Drive or a USB
-stick. A backup sitting on the same disk as the original protects against
-mistakes, not against the disk dying:
-
-```
-npm run db:backup -- --dir "D:/Google Drive/IV Technology backups"
-npm run db:backup -- --keep 60
-```
+**Second copy on another drive.** In Settings -> Backups, enter a folder on
+another drive, a USB stick or a Google Drive folder (for example
+`E:\IV Technology backups`) and press Save folder. From then on every backup
+is written to both places. The choice is stored in `backup-folder.txt`, which
+is git-ignored, so updates never overwrite it. If that drive is unplugged the
+backup on this PC is still taken and a warning is shown.
 
 The backup uses SQLite's own snapshot command, not a file copy, so it is safe
 to run while someone is billing. Every backup is opened and read back before it
@@ -89,10 +85,23 @@ is reported as successful.
 
 ### Restoring
 
-1. Stop the system (close the black window).
-2. Rename the current `prisma/dev.db` to `dev.db.broken` — do not delete it.
-3. Copy the backup you want into `prisma/` and rename it `dev.db`.
-4. Start the system again and check the last few invoices look right.
+1. Close the system (close the black window).
+2. Double-click `RESTORE.bat`. It lists every backup, newest first, from both
+   places. Press Enter for the newest, or type a number.
+3. It shows what is in that backup (invoices, customers, last invoice) next to
+   what is in the system now. Type `YES` to go ahead.
+4. Start the system with `START.bat` and check the last few invoices.
+
+To restore any other file - for example a `dev.db` someone copied to a USB
+stick - drag that file onto `RESTORE.bat`, or choose `P` in the list.
+
+Nothing is lost by restoring: the data in the system is backed up first (as
+`...-before-restore.db`, which appears at the top of the list if you need to
+undo). A damaged database is kept as `prisma/dev.db.broken-<time>`. A backup
+from an older version is brought up to date automatically.
+
+A `dev.db` copied by hand is a good backup **only if it was copied while the
+system was closed**. Copied while billing, it can be caught half-written.
 
 ---
 

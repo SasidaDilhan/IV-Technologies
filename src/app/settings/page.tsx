@@ -1,11 +1,26 @@
+import fs from "node:fs";
+
+import BackupPanel from "@/components/BackupPanel";
 import PageShell from "@/components/PageShell";
 import SettingsForm from "@/components/SettingsForm";
+import { getBackupFolder, listBackups } from "@/lib/backup";
 import { getSettings } from "@/lib/settings";
+
+const ago = (d: Date | undefined) =>
+  d
+    ? d.toLocaleString("en-GB", {
+        day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+      })
+    : null;
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const s = await getSettings();
+  const folder = getBackupFolder();
+  const backups = listBackups();
+  const local = backups.filter((b) => b.where === "local");
+  const copies = backups.filter((b) => b.where === "folder");
 
   return (
     <PageShell>
@@ -37,6 +52,15 @@ export default async function SettingsPage() {
             invoiceNextNumber: s.invoiceNextNumber,
             invoiceNumberPadding: s.invoiceNumberPadding,
           }}
+        />
+
+        <BackupPanel
+          folder={folder}
+          lastLocal={ago(local[0]?.modified)}
+          lastFolder={ago(copies[0]?.modified)}
+          localCount={local.length}
+          folderCount={copies.length}
+          folderReachable={folder ? fs.existsSync(folder) : false}
         />
       </div>
     </PageShell>
