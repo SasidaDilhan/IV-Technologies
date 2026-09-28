@@ -106,6 +106,15 @@ export function setBackupFolder(folder: string): { ok: true } | { ok: false; err
     fs.rmSync(path.resolve(FOLDER_FILE), { force: true });
     return { ok: true };
   }
+  if (/^https?:\/\//i.test(f)) {
+    return {
+      ok: false,
+      error:
+        "That is a web link - backups need a folder on this PC. Install Google Drive for " +
+        "desktop (google.com/drive/download) and sign in; then reopen Settings and press " +
+        '"Use Google Drive". Backups saved there upload to Google Drive by themselves.',
+    };
+  }
   if (!path.isAbsolute(f)) {
     return { ok: false, error: 'Give the full folder path, e.g. E:\\IV Technology backups' };
   }
