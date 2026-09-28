@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { confirmQuotation } from "@/app/invoices/actions";
 import { formatLKR, parseDiscountInput } from "@/lib/money";
-import { PAYMENT_METHODS } from "@/lib/invoices";
+import { PAYMENT_METHODS } from "@/lib/payment-methods";
 import { normaliseSerial } from "@/lib/validation";
 
 /** A quotation line that needs physical units picked before invoicing. */

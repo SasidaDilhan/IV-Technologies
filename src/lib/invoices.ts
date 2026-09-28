@@ -29,12 +29,7 @@ export interface ConvertResult {
   invoiceNo?: string;
 }
 
-export const PAYMENT_METHODS = [
-  { value: "cash", label: "Cash" },
-  { value: "bank_transfer", label: "Bank transfer" },
-  { value: "cheque", label: "Cheque" },
-  { value: "card", label: "Card" },
-];
+export { PAYMENT_METHODS } from "@/lib/payment-methods";
 
 function parseDate(value: string, label: string): Date {
   const d = new Date(value);

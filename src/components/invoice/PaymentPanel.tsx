@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { logPayment, removePayment } from "@/app/invoices/actions";
 import { formatLKR, parseDiscountInput } from "@/lib/money";
-import { PAYMENT_METHODS } from "@/lib/invoices";
+import { PAYMENT_METHODS } from "@/lib/payment-methods";
 
 export interface PaymentRow {
   id: number;
