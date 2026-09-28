@@ -23,8 +23,11 @@ interface Props {
   labelClass: string;
 }
 
-const cents = (text: string) => parseDiscountInput("fixed", text)?.value ?? null;
+/** Cents, or null for an empty or unreadable field - empty is not zero. */
+const cents = (text: string) =>
+  text.trim() === "" ? null : (parseDiscountInput("fixed", text)?.value ?? null);
 
+/** The margin % for a buying and a selling price, only once both are filled. */
 function marginOf(sellText: string, costText: string): string {
   const s = cents(sellText);
   const c = cents(costText);
@@ -33,11 +36,14 @@ function marginOf(sellText: string, costText: string): string {
 }
 
 /**
- * Buying price, margin %, selling price - edit any of them.
+ * Buying price, margin %, selling price.
  *
- *   type a selling price -> the margin % is worked out
- *   type a margin %      -> the selling price is set from the buying price
- *   change buying price  -> the margin % is worked out again
+ *   type a margin %           -> the selling price is set for that margin
+ *   buying + selling filled   -> the margin % is shown
+ *   buying price on its own   -> nothing is suggested
+ *
+ * The buying price never changes the selling price by itself: the shop
+ * decides the price, either directly or by choosing a margin.
  *
  * Margin is profit as a percentage of the buying price, the same as
  * everywhere else in the app: buy 2,000 at 40% -> sell 2,800.
@@ -72,16 +78,17 @@ export default function PriceMarginFields({
     const pct = Number(v);
     const c = cents(cost);
     if (v.trim() === "") return setMarginError(null);
-    if (!Number.isFinite(pct)) return setMarginError("Enter a number, e.g. 25");
+    if (!Number.isFinite(pct) || pct < 0) return setMarginError("Enter a margin of 0 or more, e.g. 40");
     if (!c) return setMarginError("Enter the buying price first.");
     const price = sellingPriceForMargin(c, pct);
-    if (price === null) return setMarginError("Enter a margin of -100% or more.");
+    if (price === null) return setMarginError("Enter a margin of 0 or more, e.g. 40");
     setMarginError(null);
     setSell((price / 100).toFixed(2));
   }
 
   const s = cents(sell);
   const c = cents(cost);
+  // Only once both prices are there - a buying price alone says nothing yet.
   const profit = s !== null && c ? s - c : null;
 
   return (
@@ -110,7 +117,7 @@ export default function PriceMarginFields({
             value={margin}
             onChange={(e) => onMargin(e.target.value)}
             inputMode="decimal"
-            placeholder="e.g. 25"
+            placeholder="e.g. 40"
             autoComplete="off"
             className={`${inputClass} mt-1 text-right font-mono`}
           />
