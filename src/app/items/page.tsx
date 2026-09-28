@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
-import { formatLKR, formatMarginPct } from "@/lib/money";
+import { formatLKR, formatMarginPct, marginPctOf } from "@/lib/money";
 import PageShell from "@/components/PageShell";
 
 export const dynamic = "force-dynamic";
@@ -242,10 +242,7 @@ export default async function ItemsPage({
                         // Margin is buying vs selling as entered on the item.
                         if (!item.costPrice) return <span className="text-slate-400">-</span>;
                         const m = item.unitPrice - item.costPrice;
-                        const pct =
-                          item.unitPrice === 0
-                            ? null
-                            : Math.round((m / item.unitPrice) * 1000) / 10;
+                        const pct = marginPctOf(m, item.costPrice);
                         return (
                           <span
                             className={

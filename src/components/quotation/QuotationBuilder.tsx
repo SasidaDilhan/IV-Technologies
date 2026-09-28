@@ -13,6 +13,7 @@ import {
   discountAmount,
   formatLKR,
   formatMarginPct,
+  marginPctOf,
   parseDiscountInput,
 } from "@/lib/money";
 import ScanBar, { type AddedLine } from "./ScanBar";
@@ -299,7 +300,7 @@ export default function QuotationBuilder({
     // still paid for the goods - so it eats straight into the margin.
     const cost = lines.reduce((sum, l) => sum + l.costPrice * l.quantity, 0);
     const margin = total - cost;
-    const marginPct = total === 0 ? null : Math.round((margin / total) * 1000) / 10;
+    const marginPct = marginPctOf(margin, cost);
     const uncosted = lines.filter((l) => l.costPrice === 0).length;
 
     return { subtotal, discount, total, invalid, cost, margin, marginPct, uncosted };
@@ -549,10 +550,7 @@ export default function QuotationBuilder({
                         }
                         const lineCost = line.costPrice * line.quantity;
                         const lineMarginCents = cents - lineCost;
-                        const pct =
-                          cents === 0
-                            ? null
-                            : Math.round((lineMarginCents / cents) * 1000) / 10;
+                        const pct = marginPctOf(lineMarginCents, lineCost);
                         return (
                           <span className="mt-0.5 block text-[11px] leading-tight">
                             <span className="block text-slate-500">

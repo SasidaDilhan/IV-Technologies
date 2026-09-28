@@ -172,21 +172,27 @@ export interface Margin {
   /** revenue - cost. Negative means the bill loses money. */
   margin: number;
   /**
-   * Margin as a percentage of revenue, to one decimal place, or null when
-   * there is no revenue to divide by - a free line has no meaningful
-   * percentage, and dividing by zero would print Infinity on the till.
+   * Margin as a percentage of COST, to one decimal place (see marginPctOf),
+   * or null when there is no buying price to measure against.
    */
   marginPct: number | null;
 }
 
+/**
+ * Margin % the way the shop prices: profit as a percentage of the BUYING
+ * price. Bought for 2,000, sold for 2,800 -> 800 profit -> 40%.
+ *
+ * Null when there is no cost - without a buying price there is nothing to
+ * measure against, and dividing by zero would print Infinity on the till.
+ */
+export function marginPctOf(profitCents: number, costCents: number): number | null {
+  if (costCents <= 0) return null;
+  return Math.round((profitCents / costCents) * 1000) / 10;
+}
+
 function shape(cost: number, revenue: number): Margin {
   const margin = revenue - cost;
-  return {
-    cost,
-    revenue,
-    margin,
-    marginPct: revenue === 0 ? null : Math.round((margin / revenue) * 1000) / 10,
-  };
+  return { cost, revenue, margin, marginPct: marginPctOf(margin, cost) };
 }
 
 /** Margin on a single bill line, after that line's own discount. */
@@ -215,29 +221,22 @@ export function billMargin(input: {
   return shape(cost, totals.total);
 }
 
-/** "+27.4%" / "-3.1%" / "-" when there is no revenue to measure against. */
+/** "+27.4%" / "-3.1%" / "-" when there is no cost to measure against. */
 export function formatMarginPct(pct: number | null): string {
   if (pct === null) return "-";
   return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
 /**
- * Selling price that gives a margin of `marginPct` on the SELLING price - the
- * same way margin is shown everywhere else in the app - rounded UP to the
- * whole rupee so the margin is never below what was asked for.
+ * Selling price that gives a margin of `marginPct` on the BUYING price,
+ * rounded UP to the whole rupee so the margin is never below what was asked.
  *
- *   cost 6,000 at 25% margin -> 8,000   (8,000 - 6,000 = 2,000 = 25% of 8,000)
+ *   cost 2,000 at 40% margin -> 2,800   (800 profit = 40% of 2,000)
  *
- * Returns null for a margin of 100% or more, which no price can reach.
+ * Returns null without a buying price, or for a margin below -100%.
  */
 export function sellingPriceForMargin(costCents: number, marginPct: number): number | null {
-  if (!(marginPct < 100) || costCents <= 0) return null;
-  const exact = costCents / (1 - marginPct / 100);
-  return Math.ceil(exact / 100) * 100;
-}
-
-/** Markup: profit as a percentage of COST. 6,000 -> 8,000 is a 33.3% markup. */
-export function markupPct(sellCents: number, costCents: number): number | null {
-  if (costCents <= 0) return null;
-  return Math.round(((sellCents - costCents) / costCents) * 1000) / 10;
+  if (costCents <= 0 || !(marginPct >= -100)) return null;
+  const exact = costCents * (1 + marginPct / 100);
+  return Math.ceil(Math.round(exact) / 100) * 100;
 }

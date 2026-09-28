@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { billTotals, lineTotal } from "@/lib/money";
+import { billTotals, lineTotal, marginPctOf } from "@/lib/money";
 
 /**
  * Figures for the owner's dashboard.
@@ -315,7 +315,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     period,
     totals: {
       revenue, cost, profit,
-      marginPct: revenue === 0 ? null : Math.round((profit / revenue) * 1000) / 10,
+      marginPct: marginPctOf(profit, cost),
       invoices: invoices.length,
       units,
       received: received._sum.amount ?? 0,

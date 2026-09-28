@@ -3,7 +3,7 @@ import Link from "next/link";
 import PageShell from "@/components/PageShell";
 import SalesChart from "@/components/dashboard/SalesChart";
 import { LOW_STOCK, isoDay, loadDashboard, resolvePeriod, type Preset } from "@/lib/dashboard";
-import { formatLKR, formatMarginPct } from "@/lib/money";
+import { formatLKR, formatMarginPct, marginPctOf } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +16,8 @@ const PRESETS: { key: Preset; label: string }[] = [
   { key: "ytd", label: "This year" },
 ];
 
-const pct = (profit: number, revenue: number) =>
-  revenue === 0 ? null : Math.round((profit / revenue) * 1000) / 10;
+/** Margin on cost, as everywhere in the app. */
+const pct = (profit: number, cost: number) => marginPctOf(profit, cost);
 
 function Tile({
   label,
@@ -258,7 +258,7 @@ export default async function DashboardPage({
                       <td className={tdR}>{formatLKR(r.revenue)}</td>
                       <td className={`${tdR} text-slate-500`}>{formatLKR(r.cost)}</td>
                       <td className={`${tdR} ${r.profit < 0 ? "text-red-600 dark:text-red-400" : ""}`}>{formatLKR(r.profit)}</td>
-                      <td className={tdR}>{formatMarginPct(pct(r.profit, r.revenue))}</td>
+                      <td className={tdR}>{formatMarginPct(pct(r.profit, r.cost))}</td>
                       <td className={`${tdR} ${r.inStock === 0 ? "font-semibold text-red-600 dark:text-red-400" : ""}`}>
                         {r.inStock === null ? <span className="text-slate-400">-</span> : r.inStock}
                       </td>
@@ -317,7 +317,7 @@ export default async function DashboardPage({
                       <td className={tdR}>{formatLKR(r.revenue)}</td>
                       <td className={`${tdR} text-slate-500`}>{formatLKR(r.cost)}</td>
                       <td className={`${tdR} ${r.profit < 0 ? "text-red-600 dark:text-red-400" : ""}`}>{formatLKR(r.profit)}</td>
-                      <td className={tdR}>{formatMarginPct(pct(r.profit, r.revenue))}</td>
+                      <td className={tdR}>{formatMarginPct(pct(r.profit, r.cost))}</td>
                       <td className={`${tdR} ${r.balance > 0 ? "text-amber-700 dark:text-amber-400" : "text-slate-400"}`}>
                         {r.balance > 0 ? formatLKR(r.balance) : "paid"}
                       </td>

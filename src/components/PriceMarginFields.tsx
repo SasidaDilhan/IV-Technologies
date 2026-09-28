@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import {
   formatLKR,
-  markupPct,
+  marginPctOf,
   parseDiscountInput,
   sellingPriceForMargin,
 } from "@/lib/money";
@@ -28,8 +28,8 @@ const cents = (text: string) => parseDiscountInput("fixed", text)?.value ?? null
 function marginOf(sellText: string, costText: string): string {
   const s = cents(sellText);
   const c = cents(costText);
-  if (!s || !c) return "";
-  return String(Math.round(((s - c) / s) * 1000) / 10);
+  if (s === null || !c) return "";
+  return String(marginPctOf(s - c, c));
 }
 
 /**
@@ -39,9 +39,8 @@ function marginOf(sellText: string, costText: string): string {
  *   type a margin %      -> the selling price is set from the buying price
  *   change buying price  -> the margin % is worked out again
  *
- * Margin is measured on the selling price, the same as everywhere else in the
- * app. Markup (measured on cost) is shown beside it because many people price
- * that way, and the two are easy to confuse.
+ * Margin is profit as a percentage of the buying price, the same as
+ * everywhere else in the app: buy 2,000 at 40% -> sell 2,800.
  */
 export default function PriceMarginFields({
   sell,
@@ -76,7 +75,7 @@ export default function PriceMarginFields({
     if (!Number.isFinite(pct)) return setMarginError("Enter a number, e.g. 25");
     if (!c) return setMarginError("Enter the buying price first.");
     const price = sellingPriceForMargin(c, pct);
-    if (price === null) return setMarginError("Margin must be below 100%.");
+    if (price === null) return setMarginError("Enter a margin of -100% or more.");
     setMarginError(null);
     setSell((price / 100).toFixed(2));
   }
@@ -84,7 +83,6 @@ export default function PriceMarginFields({
   const s = cents(sell);
   const c = cents(cost);
   const profit = s !== null && c ? s - c : null;
-  const markup = s !== null && c ? markupPct(s, c) : null;
 
   return (
     <div className="space-y-2">
@@ -150,8 +148,7 @@ export default function PriceMarginFields({
         >
           Profit per unit:{" "}
           <span className="font-mono font-medium">{formatLKR(profit)}</span>
-          {margin && ` · margin ${margin}% of the selling price`}
-          {markup !== null && ` · markup ${markup}% on cost`}
+          {margin && ` · margin ${margin}% on the buying price`}
           {profit < 0 && " - selling below cost"}
         </p>
       )}
