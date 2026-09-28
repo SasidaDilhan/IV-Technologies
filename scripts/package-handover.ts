@@ -82,14 +82,14 @@ Your data
 
 Everything lives in one file:  prisma\\dev.db
 
-A backup is taken automatically every time you start the
-system, into the "backups" folder.
+A backup is taken automatically a minute after anything is
+saved, and every time you start the system, into the
+"backups" folder. You do not need to do anything.
 
 IMPORTANT: keep a second copy off this computer. Open
 Settings -> Backups, enter a folder on another drive, a USB
 stick or Google Drive, and press "Save folder". Every backup
-is then saved in both places. Press "Back up now" at the end
-of a busy day.
+is then saved in both places.
 
 To put a backup back: close the system, double-click
 RESTORE.bat, press Enter for the newest backup, type YES.
@@ -125,9 +125,12 @@ RESTORE.bat - it puts back the backup taken in step 3.
 Backups
 -------
 
-A backup is taken every time the system starts. In Settings ->
-Backups you can also choose a second folder (another drive, a
-USB stick or Google Drive) and press "Back up now" at any time.
+Backups are now automatic: one is taken a minute after anything
+is saved (items, estimates, invoices, payments, stock), as well
+as every time the system starts.
+
+In Settings -> Backups, choose a second folder (another drive, a
+USB stick or Google Drive) so every backup is also saved there.
 
 To put a backup back: close the system, double-click RESTORE.bat,
 press Enter for the newest backup, and type YES.

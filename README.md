@@ -70,7 +70,14 @@ the whole backup.
 time - worth doing at the end of a busy day - press **Back up now** in
 Settings, or double-click `BACKUP.bat`.
 
-Backups land in `backups/`, named by date and time, and the last 30 are kept.
+**Automatic backup after every change.** A minute after anything is saved -
+an item, an estimate, an invoice, a payment, stock, a customer, settings - a
+backup is taken. A busy stretch of billing gives at most one backup a minute,
+and saving never waits for it. (`AUTO_BACKUP="off"` in `.env` turns this off.)
+
+Backups land in `backups/`, named by date and time. The newest 50 are kept,
+plus the last backup of each day for 60 days, so a mistake noticed weeks
+later can still be undone.
 
 **Second copy on another drive.** In Settings -> Backups, enter a folder on
 another drive, a USB stick or a Google Drive folder (for example

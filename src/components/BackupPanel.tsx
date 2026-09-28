@@ -24,8 +24,7 @@ const field =
 
 /**
  * Backups on the Settings page: where the second copy goes, when the last
- * backup was taken, and a button to take one now - worth pressing at the end
- * of a busy day, since START.bat only backs up when the system starts.
+ * backup was taken, and a button to take one now (e.g. before a big change).
  */
 export default function BackupPanel(p: Props) {
   const [folder, setFolder] = useState(p.folder ?? "");
@@ -39,7 +38,8 @@ export default function BackupPanel(p: Props) {
     <section className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
       <h2 className="font-semibold">Backups</h2>
       <p className="mt-1 text-sm text-slate-500">
-        A backup is taken every time the system starts. Keep a second copy on
+        A backup is taken automatically a minute after anything is saved, and
+        every time the system starts. Keep a second copy on
         another drive, a USB stick or a Google Drive folder, so a dead computer
         does not take the data with it. To put a backup back, close the system
         and double-click <span className="font-mono">RESTORE.bat</span>.

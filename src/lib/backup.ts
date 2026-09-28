@@ -21,7 +21,10 @@ import { PrismaClient } from "@prisma/client";
  * UPDATE.bat, BACKUP.bat) and scripts/restore.ts.
  */
 
-export const KEEP_DEFAULT = 30;
+/** Most recent backups kept, whatever their age. */
+export const KEEP_DEFAULT = 50;
+/** Days for which the day's last backup is also kept. */
+export const DAILY_DAYS = 60;
 
 /**
  * For scripts: resolve the database once and hand Prisma that exact file, so
@@ -163,9 +166,24 @@ export async function inspectDatabase(file: string): Promise<DbSummary> {
   }
 }
 
+/**
+ * Keep the newest `keep` backups, plus the last backup of each of the most
+ * recent DAILY_DAYS days. Backups are taken after every change, so a busy day
+ * alone would fill `keep`; the daily ones make sure a mistake noticed a week
+ * later can still be undone.
+ */
 function prune(dir: string, keep: number): number {
+  // Names are iv-technology-YYYY-MM-DD_HHMMSS..., so a sort is oldest-first.
   const files = fs.readdirSync(dir).filter((f) => BACKUP_PATTERN.test(f)).sort();
-  const excess = files.slice(0, Math.max(0, files.length - keep));
+  const kept = new Set(files.slice(-keep));
+  const lastOfDay = new Map<string, string>();
+  for (const f of files) lastOfDay.set(f.slice("iv-technology-".length, "iv-technology-".length + 10), f);
+  Array.from(lastOfDay.keys())
+    .sort()
+    .slice(-DAILY_DAYS)
+    .forEach((day) => kept.add(lastOfDay.get(day)!));
+
+  const excess = files.filter((f) => !kept.has(f));
   for (const f of excess) fs.rmSync(path.join(dir, f), { force: true });
   return excess.length;
 }
