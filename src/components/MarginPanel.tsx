@@ -1,9 +1,14 @@
-import { billMargin, formatLKR, formatMarginPct, type MarginLineLike } from "@/lib/money";
+import { billMargin, formatLKR, formatMarginPct, marginPctOf, type MarginLineLike } from "@/lib/money";
 
 interface Props {
   lines: MarginLineLike[];
   billDiscountType: string;
   billDiscountValue: number;
+  /**
+   * Invoices with returns: credit given back, and the cost of goods that went
+   * back on the shelf (a faulty return's cost stays, as a loss).
+   */
+  returned?: { credit: number; restockedCost: number };
 }
 
 /**
@@ -12,8 +17,11 @@ interface Props {
  * Screen only. The PDF routes never render this component and the document
  * props carry no cost field, so these figures cannot reach a customer copy.
  */
-export default function MarginPanel({ lines, billDiscountType, billDiscountValue }: Props) {
-  const m = billMargin({ lines, billDiscountType, billDiscountValue });
+export default function MarginPanel({ lines, billDiscountType, billDiscountValue, returned }: Props) {
+  const gross = billMargin({ lines, billDiscountType, billDiscountValue });
+  const cost = gross.cost - (returned?.restockedCost ?? 0);
+  const revenue = gross.revenue - (returned?.credit ?? 0);
+  const m = { cost, revenue, margin: revenue - cost, marginPct: marginPctOf(revenue - cost, cost) };
   const uncosted = lines.filter((l) => l.costPrice === 0).length;
 
   return (
@@ -27,7 +35,9 @@ export default function MarginPanel({ lines, billDiscountType, billDiscountValue
           <span className="font-mono">{formatLKR(m.cost)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Selling total</span>
+          <span className="text-slate-500">
+            Selling total{returned && returned.credit > 0 ? " after returns" : ""}
+          </span>
           <span className="font-mono">{formatLKR(m.revenue)}</span>
         </div>
         <div

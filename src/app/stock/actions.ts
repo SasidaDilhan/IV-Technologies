@@ -78,8 +78,29 @@ export async function removeSerial(id: number): Promise<{ error?: string }> {
     };
   }
 
+  // A unit that was sold and came back on a return is part of that return's
+  // record; deleting it would erase who had it.
+  if ((await prisma.returnSerial.count({ where: { serialUnitId: id } })) > 0) {
+    return {
+      error: `${unit.serialNumber} was sold and returned, so it is kept on record and cannot be removed.`,
+    };
+  }
+
   await prisma.serialUnit.delete({ where: { id } });
   revalidatePath("/stock");
   revalidatePath("/items");
+  return {};
+}
+
+/** A faulty unit from a return has been repaired or replaced: sell it again. */
+export async function restockFaultyUnit(id: number): Promise<{ error?: string }> {
+  const moved = await prisma.serialUnit.updateMany({
+    where: { id, status: "faulty", invoiceLineId: null },
+    data: { status: "in_stock" },
+  });
+  if (moved.count === 0) return { error: "That unit is not marked faulty." };
+  revalidatePath("/stock");
+  revalidatePath("/items");
+  revalidatePath("/dashboard");
   return {};
 }

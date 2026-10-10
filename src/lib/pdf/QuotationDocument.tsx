@@ -69,6 +69,8 @@ export interface QuotationPdfProps {
   settings: PdfSettings;
   /** Invoices only. */
   payments?: PdfPayment[];
+  /** Invoices only: returns credited against this invoice. */
+  returns?: { returnNo: string; creditAmount: number; refundAmount: number }[];
 }
 
 const INK = "#1f2933";
@@ -192,6 +194,8 @@ const styles = StyleSheet.create({
   },
 });
 
+export { styles as pdfStyles };
+
 function lineNet(line: PdfLine): number {
   const gross = line.unitPrice * line.quantity;
   return gross - discountAmount(gross, line.lineDiscountType, line.lineDiscountValue);
@@ -248,7 +252,10 @@ export function QuotationDocument(props: QuotationPdfProps) {
   const docTitle = isInvoice ? "INVOICE" : "ESTIMATE";
   const numberLabel = isInvoice ? "INVOICE NUMBER" : "ESTIMATE NUMBER";
   const paid = (props.payments ?? []).reduce((sum, p) => sum + p.amount, 0);
-  const balanceDue = total - paid;
+  const returns = props.returns ?? [];
+  const refunded = returns.reduce((sum, r) => sum + r.refundAmount, 0);
+  const balanceDue =
+    total - returns.reduce((sum, r) => sum + r.creditAmount, 0) - paid + refunded;
 
   const hasStandardTerms = !!props.termsText && props.termsText.trim() !== "";
   const hasExtraTerms = !!props.extraTerms && props.extraTerms.trim() !== "";
@@ -412,10 +419,22 @@ export function QuotationDocument(props: QuotationPdfProps) {
 
             {isInvoice && (
               <>
+                {returns.map((r) => (
+                  <View key={r.returnNo} style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Returned ({r.returnNo})</Text>
+                    <Text style={styles.totalValue}>({formatLKR(r.creditAmount)})</Text>
+                  </View>
+                ))}
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Received</Text>
                   <Text style={styles.totalValue}>({formatLKR(paid)})</Text>
                 </View>
+                {refunded > 0 && (
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Refunded</Text>
+                    <Text style={styles.totalValue}>{formatLKR(refunded)}</Text>
+                  </View>
+                )}
                 <View style={styles.grandRow}>
                   <Text style={styles.grandLabel}>Balance due</Text>
                   <Text style={styles.grandValue}>

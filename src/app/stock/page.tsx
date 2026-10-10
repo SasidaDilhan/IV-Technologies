@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import RemoveSerialButton from "@/components/RemoveSerialButton";
+import RemoveSerialButton, { RestockFaultyButton } from "@/components/RemoveSerialButton";
 import SerialIntake from "@/components/SerialIntake";
 import { prisma } from "@/lib/prisma";
 import { addSerial } from "./actions";
@@ -132,11 +132,16 @@ export default async function StockPage({
                                 className={`rounded-full px-2 py-0.5 text-xs ${
                                   unit.status === "in_stock"
                                     ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                                    : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                                    : unit.status === "faulty"
+                                      ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+                                      : "bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                                 }`}
                               >
-                                {unit.status}
+                                {unit.status === "faulty" ? "faulty (returned)" : unit.status}
                               </span>
+                              {unit.status === "faulty" && !unit.invoiceLineId && (
+                                <RestockFaultyButton id={unit.id} />
+                              )}
                               {unit.status === "in_stock" &&
                                 !unit.invoiceLineId &&
                                 !unit.quoteLineId && <RemoveSerialButton id={unit.id} />}

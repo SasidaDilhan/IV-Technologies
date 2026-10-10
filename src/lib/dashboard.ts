@@ -14,6 +14,10 @@ import { billTotals, lineTotal, marginPctOf } from "@/lib/money";
  *  - Item-wise revenue shares each invoice's bill discount across its lines in
  *    proportion to their value, with the rounding remainder put on the last
  *    line, so item totals add up exactly to invoice totals.
+ *  - RETURNS are taken off the invoice they belong to: its revenue drops by
+ *    the credit and its units by what came back. Cost comes back only for
+ *    goods put back in stock - a faulty return's cost stays, as a loss.
+ *  - RECEIVED is payments in the period less refunds handed back in it.
  */
 
 export type Preset = "today" | "mtd" | "last7" | "last30" | "lastmonth" | "ytd" | "custom";
@@ -116,6 +120,8 @@ export interface InvoiceRow {
   profit: number;
   paid: number;
   balance: number;
+  /** Credit for goods returned against this invoice. */
+  returned: number;
   uncosted: boolean;
 }
 
@@ -149,6 +155,10 @@ export interface Dashboard {
     openEstimates: number;
     openEstimateValue: number;
     uncostedRevenue: number;
+    /** Credit for returns against the period's invoices. */
+    returned: number;
+    /** Refunds handed back during the period. */
+    refunded: number;
   };
   byItem: ItemRow[];
   byInvoice: InvoiceRow[];
@@ -163,24 +173,38 @@ export const LOW_STOCK = 2;
 export async function loadDashboard(period: Period): Promise<Dashboard> {
   const { from, to } = period;
 
-  const [invoices, received, liveInvoices, openEstimates, trackedItems] = await Promise.all([
+  const [invoices, received, refundedInPeriod, liveInvoices, openEstimates, trackedItems] = await Promise.all([
     prisma.invoice.findMany({
       where: { supersededAt: null, issueDate: { gte: from, lte: to } },
       orderBy: [{ issueDate: "desc" }, { id: "desc" }],
       include: {
         customer: { select: { name: true } },
         payments: { select: { amount: true } },
-        lines: { include: { item: { select: { itemCode: true, name: true } } } },
+        returns: { select: { creditAmount: true, refundAmount: true } },
+        lines: {
+          include: {
+            item: { select: { itemCode: true, name: true } },
+            returnLines: { select: { quantity: true, creditAmount: true, costPrice: true, restock: true } },
+          },
+        },
       },
     }),
     prisma.payment.aggregate({
       where: { paidAt: { gte: from, lte: to } },
       _sum: { amount: true },
     }),
+    prisma.invoiceReturn.aggregate({
+      where: { returnDate: { gte: from, lte: to } },
+      _sum: { refundAmount: true },
+    }),
     // Outstanding is "what customers owe right now", whenever it was billed.
     prisma.invoice.findMany({
       where: { supersededAt: null },
-      include: { lines: true, payments: { select: { amount: true } } },
+      include: {
+        lines: true,
+        payments: { select: { amount: true } },
+        returns: { select: { creditAmount: true, refundAmount: true } },
+      },
     }),
     prisma.quotation.findMany({ where: { invoice: null }, include: { lines: true } }),
     prisma.item.findMany({
@@ -196,7 +220,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
   const items = new Map<number, ItemRow>();
   const byInvoice: InvoiceRow[] = [];
 
-  let revenue = 0, cost = 0, units = 0, uncostedRevenue = 0;
+  let revenue = 0, cost = 0, units = 0, uncostedRevenue = 0, returned = 0;
 
   for (const inv of invoices) {
     const t = billTotals({
@@ -204,6 +228,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       billDiscountType: inv.billDiscountType,
       billDiscountValue: inv.billDiscountValue,
       payments: inv.payments,
+      returns: inv.returns,
     });
 
     // Share the bill discount across lines, remainder on the last line.
@@ -218,10 +243,16 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
 
     let invCost = 0, invUnits = 0, invUncosted = false;
     inv.lines.forEach((line, i) => {
-      const lineRevenue = nets[i] - shares[i];
-      const lineCost = line.costPrice * line.quantity;
+      const back = line.returnLines;
+      const backUnits = back.reduce((n, r) => n + r.quantity, 0);
+      const lineRevenue = nets[i] - shares[i] - back.reduce((n, r) => n + r.creditAmount, 0);
+      // Restocked goods are the shop's again; faulty ones stay a cost.
+      const lineCost =
+        line.costPrice * line.quantity -
+        back.reduce((n, r) => n + (r.restock ? r.costPrice * r.quantity : 0), 0);
+      const lineUnits = line.quantity - backUnits;
       invCost += lineCost;
-      invUnits += line.quantity;
+      invUnits += lineUnits;
       if (line.costPrice === 0) {
         invUncosted = true;
         uncostedRevenue += lineRevenue;
@@ -231,7 +262,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
         units: 0, revenue: 0, cost: 0, profit: 0, uncosted: false,
         inStock: stockOf.has(line.itemId) ? stockOf.get(line.itemId)! : null,
       };
-      row.units += line.quantity;
+      row.units += lineUnits;
       row.revenue += lineRevenue;
       row.cost += lineCost;
       row.profit = row.revenue - row.cost;
@@ -239,14 +270,15 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       items.set(line.itemId, row);
     });
 
-    revenue += t.total;
+    revenue += t.netTotal;
     cost += invCost;
     units += invUnits;
+    returned += t.returned;
     byInvoice.push({
       id: inv.id, invoiceNo: inv.invoiceNo, issueDate: inv.issueDate,
       customer: inv.customer.name, units: invUnits,
-      revenue: t.total, cost: invCost, profit: t.total - invCost,
-      paid: t.paid, balance: t.balanceDue, uncosted: invUncosted,
+      revenue: t.netTotal, cost: invCost, profit: t.netTotal - invCost,
+      paid: t.paid - t.refunded, balance: t.balanceDue, returned: t.returned, uncosted: invUncosted,
     });
   }
 
@@ -286,6 +318,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       billDiscountType: inv.billDiscountType,
       billDiscountValue: inv.billDiscountValue,
       payments: inv.payments,
+      returns: inv.returns,
     });
     return sum + Math.max(t.balanceDue, 0);
   }, 0);
@@ -318,11 +351,13 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       marginPct: marginPctOf(profit, cost),
       invoices: invoices.length,
       units,
-      received: received._sum.amount ?? 0,
+      received: (received._sum.amount ?? 0) - (refundedInPeriod._sum.refundAmount ?? 0),
       outstanding,
       openEstimates: openEstimates.length,
       openEstimateValue,
       uncostedRevenue,
+      returned,
+      refunded: refundedInPeriod._sum.refundAmount ?? 0,
     },
     byItem: Array.from(items.values()).sort((a, b) => b.revenue - a.revenue),
     byInvoice,

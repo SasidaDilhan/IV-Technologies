@@ -35,6 +35,7 @@ export default async function CustomerDetailPage({
         orderBy: { issueDate: "asc" },
         include: {
           payments: true,
+          returns: true,
           lines: {
             include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
           },
@@ -90,7 +91,8 @@ export default async function CustomerDetailPage({
         billDiscountValue: inv.billDiscountValue,
         advanceAmount: inv.advanceAmount,
         payments: inv.payments,
-      }).total,
+        returns: inv.returns,
+      }).netTotal,
       lines: inv.lines.map((l) => ({
         name: l.item.name,
         itemCode: l.item.itemCode,

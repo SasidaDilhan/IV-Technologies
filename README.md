@@ -51,6 +51,14 @@ The system runs at **http://localhost:3000**.
    invoice is raised. Those units are now marked sold.
 3. **Payments** — log each payment on the invoice as it comes in. The balance
    updates itself and the invoice shows *unpaid*, *part paid* or *paid*.
+4. **Returns** — on the invoice press **Return items**, tick the serial numbers
+   or enter the quantities coming back (or **Return the whole invoice**), choose
+   *Back in stock* or *Faulty*, and record any money handed back. The invoice is
+   not changed; the return is its own record (`INV-000012-R1`) with a printable
+   **Return note**. The credit is the goods' share of the invoice total after
+   discounts. Faulty units stay out of stock until **Back in stock** is pressed
+   for them in Stock intake. The latest return can be undone if it was a
+   mistake. An invoice with returns can no longer be edited.
 
 ### Document numbering
 

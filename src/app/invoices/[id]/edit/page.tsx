@@ -43,6 +43,10 @@ export default async function EditInvoicePage({
   if (invoice.supersededAt) {
     redirect(`/invoices/${await latestRevisionId(invoice.id)}/edit`);
   }
+  // An invoice with returns is fixed; the invoice page explains why.
+  if ((await prisma.invoiceReturn.count({ where: { invoiceId: invoice.id } })) > 0) {
+    redirect(`/invoices/${invoice.id}`);
+  }
 
   const rootId = invoice.rootInvoiceId ?? invoice.id;
   const root =

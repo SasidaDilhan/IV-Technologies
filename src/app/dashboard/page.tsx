@@ -124,7 +124,11 @@ export default async function DashboardPage({
 
         {/* ---- headline numbers ------------------------------------------- */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile label="Sales" value={formatLKR(t.revenue)} sub={`${t.invoices} invoice${t.invoices === 1 ? "" : "s"}`} />
+          <Tile
+            label="Sales"
+            value={formatLKR(t.revenue)}
+            sub={`${t.invoices} invoice${t.invoices === 1 ? "" : "s"}${t.returned > 0 ? `, after ${formatLKR(t.returned)} returned` : ""}`}
+          />
           <Tile label="Cost" value={formatLKR(t.cost)} sub="buying price of what was sold" />
           <Tile
             label="Profit"
@@ -133,7 +137,11 @@ export default async function DashboardPage({
             tone={t.profit < 0 ? "bad" : t.profit > 0 ? "good" : "plain"}
           />
           <Tile label="Units sold" value={String(t.units)} sub={`${d.byItem.length} different item${d.byItem.length === 1 ? "" : "s"}`} />
-          <Tile label="Cash received" value={formatLKR(t.received)} sub="payments taken in this period" />
+          <Tile
+            label="Cash received"
+            value={formatLKR(t.received)}
+            sub={t.refunded > 0 ? `after ${formatLKR(t.refunded)} refunded` : "payments taken in this period"}
+          />
           <Tile
             label="Owed to you"
             value={formatLKR(t.outstanding)}

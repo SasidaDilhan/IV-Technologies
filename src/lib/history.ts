@@ -118,12 +118,21 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
     }),
     prisma.invoice.findMany({
       where: {
-        OR: [...commonMatches, { invoiceNo: { contains: q } }],
+        OR: [
+          ...commonMatches,
+          { invoiceNo: { contains: q } },
+          // A unit that was sold and later returned is no longer on the line,
+          // but the return keeps the record of it.
+          ...(serialUnit
+            ? [{ returns: { some: { lines: { some: { serials: { some: { serialUnitId: serialUnit.id } } } } } } }]
+            : []),
+        ],
       },
       orderBy: { issueDate: "desc" },
       take: 50,
       include: {
         customer: true,
+        returns: true,
         lines: {
           orderBy: { sortOrder: "asc" },
           include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
@@ -193,7 +202,8 @@ export async function searchHistory(rawQuery: string): Promise<HistoryResult> {
         billDiscountType: doc.billDiscountType,
         billDiscountValue: doc.billDiscountValue,
         advanceAmount: doc.advanceAmount,
-      }).total,
+        returns: doc.returns,
+      }).netTotal,
     })),
   ].sort((a, b) => b.issueDate.getTime() - a.issueDate.getTime());
 

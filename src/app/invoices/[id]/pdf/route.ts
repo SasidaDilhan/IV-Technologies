@@ -27,9 +27,14 @@ export async function GET(
     include: {
       customer: true,
       payments: { orderBy: { paidAt: "asc" } },
+      returns: { orderBy: { id: "asc" } },
       lines: {
         orderBy: { sortOrder: "asc" },
-        include: { item: true, serialUnits: { orderBy: { serialNumber: "asc" } } },
+        include: {
+          item: true,
+          serialUnits: { orderBy: { serialNumber: "asc" } },
+          returnLines: { include: { serials: true } },
+        },
       },
     },
   });
@@ -54,7 +59,16 @@ export async function GET(
         name: line.item.name,
         itemCode: line.item.itemCode,
         note: line.note,
-        serialNumbers: line.serialUnits.map((s) => s.serialNumber),
+        // The invoice prints as issued: every unit sold on the line, including
+        // any since returned (the return has its own note) or moved to a newer
+        // revision (kept as a snapshot).
+        serialNumbers:
+          line.serialUnits.length === 0 && line.returnLines.length === 0 && line.serialSnapshot
+            ? line.serialSnapshot.split(", ")
+            : [
+                ...line.serialUnits.map((s) => s.serialNumber),
+                ...line.returnLines.flatMap((r) => r.serials.map((s) => s.serialNumber)),
+              ].sort(),
         unitPrice: line.unitPrice,
         quantity: line.quantity,
         lineDiscountType: line.lineDiscountType,
@@ -64,6 +78,11 @@ export async function GET(
       billDiscountValue: invoice.billDiscountValue,
       termsText: invoice.termsText,
       extraTerms: invoice.extraTerms,
+      returns: invoice.returns.map((r) => ({
+        returnNo: r.returnNo,
+        creditAmount: r.creditAmount,
+        refundAmount: r.refundAmount,
+      })),
       payments: invoice.payments.map((p) => ({
         date: formatDate(p.paidAt),
         method: p.method,

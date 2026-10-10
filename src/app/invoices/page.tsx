@@ -3,7 +3,7 @@ import Link from "next/link";
 import PageShell from "@/components/PageShell";
 import { prisma } from "@/lib/prisma";
 import { billTotals, formatLKR } from "@/lib/money";
-import { settlementOf } from "@/lib/invoices";
+import { invoiceState } from "@/lib/returns";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export default async function InvoicesPage({
     where: showAll ? undefined : { supersededAt: null },
     orderBy: [{ issueDate: "desc" }, { id: "desc" }],
     take: 100,
-    include: { customer: true, lines: true, payments: true },
+    include: { customer: true, lines: true, payments: true, returns: true },
   });
 
   const outstanding = invoices
@@ -31,6 +31,7 @@ export default async function InvoicesPage({
       billDiscountValue: inv.billDiscountValue,
       advanceAmount: inv.advanceAmount,
       payments: inv.payments,
+      returns: inv.returns,
     });
     return sum + Math.max(t.balanceDue, 0);
   }, 0);
@@ -89,8 +90,9 @@ export default async function InvoicesPage({
                     billDiscountValue: inv.billDiscountValue,
                     advanceAmount: inv.advanceAmount,
                     payments: inv.payments,
+                    returns: inv.returns,
                   });
-                  const state = settlementOf(t.balanceDue, t.paid);
+                  const state = invoiceState(t);
                   const old = inv.supersededAt !== null;
                   return (
                     <tr
@@ -129,7 +131,12 @@ export default async function InvoicesPage({
                         )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right font-mono">
-                        {formatLKR(t.total)}
+                        {formatLKR(t.netTotal)}
+                        {t.returned > 0 && (
+                          <span className="block text-xs text-amber-700 dark:text-amber-500">
+                            after {formatLKR(t.returned)} returned
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right font-mono">
                         {old ? "-" : formatLKR(Math.max(t.balanceDue, 0))}

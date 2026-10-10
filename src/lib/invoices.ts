@@ -218,7 +218,7 @@ export async function addPayment(
 
   const invoice = await prisma.invoice.findUnique({
     where: { id: input.invoiceId },
-    include: { lines: true, payments: true },
+    include: { lines: true, payments: true, returns: true },
   });
   if (!invoice) return { ok: false, error: "Invoice not found." };
   if (invoice.supersededAt) {
@@ -234,6 +234,7 @@ export async function addPayment(
     billDiscountValue: invoice.billDiscountValue,
     advanceAmount: invoice.advanceAmount,
     payments: invoice.payments,
+    returns: invoice.returns,
   });
 
   if (input.amount > totals.balanceDue) {
@@ -343,6 +344,12 @@ export async function reviseInvoice(
         include: { lines: { include: { serialUnits: true } } },
       });
       if (!previous) throw new Error("That invoice no longer exists.");
+      // A return points at this invoice's lines and has its own credit note;
+      // rebuilding the lines in a revision would leave it describing a bill
+      // that no longer exists.
+      if ((await tx.invoiceReturn.count({ where: { invoiceId: previousId } })) > 0) {
+        throw new Error("This invoice has returns, so it can no longer be edited.");
+      }
       if (previous.supersededAt || previous.status === "superseded") {
         throw new Error(
           "This invoice has already been revised. Edit the latest revision instead.",

@@ -43,7 +43,7 @@ export async function loadDocuments(opts: {
       ? prisma.invoice.findMany({
           orderBy: { createdAt: "desc" },
           take,
-          include: { customer: true, lines: true },
+          include: { customer: true, lines: true, returns: true },
         })
       : Promise.resolve([]),
   ]);
@@ -76,7 +76,8 @@ export async function loadDocuments(opts: {
         lines: inv.lines,
         billDiscountType: inv.billDiscountType,
         billDiscountValue: inv.billDiscountValue,
-      }).total,
+        returns: inv.returns,
+      }).netTotal,
     })),
   ];
 

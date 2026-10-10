@@ -79,6 +79,11 @@ export interface BillTotalsInput {
   advanceAmount?: number;
   /** Invoices only. */
   payments?: { amount: number }[];
+  /**
+   * Invoices only. creditAmount comes off what the customer owes for goods
+   * brought back; refundAmount is money handed back to them.
+   */
+  returns?: { creditAmount: number; refundAmount: number }[];
 }
 
 export interface BillTotals {
@@ -88,7 +93,16 @@ export interface BillTotals {
   total: number;
   advance: number;
   paid: number;
-  /** total - advance - paid. The number printed as "Balance Due". */
+  /** Value of goods returned, credited against the total. */
+  returned: number;
+  /** Money paid back to the customer on returns. */
+  refunded: number;
+  /** total - returned: what the job is worth after returns. */
+  netTotal: number;
+  /**
+   * total - returned - advance - paid + refunded. The number printed as
+   * "Balance Due". Negative means the customer is owed money back.
+   */
   balanceDue: number;
 }
 
@@ -107,6 +121,8 @@ export function billTotals(input: BillTotalsInput): BillTotals {
   const total = subtotal - billDiscount;
   const advance = input.advanceAmount ?? 0;
   const paid = (input.payments ?? []).reduce((sum, p) => sum + p.amount, 0);
+  const returned = (input.returns ?? []).reduce((sum, r) => sum + r.creditAmount, 0);
+  const refunded = (input.returns ?? []).reduce((sum, r) => sum + r.refundAmount, 0);
 
   return {
     subtotal,
@@ -114,8 +130,53 @@ export function billTotals(input: BillTotalsInput): BillTotals {
     total,
     advance,
     paid,
-    balanceDue: total - advance - paid,
+    returned,
+    refunded,
+    netTotal: total - returned,
+    balanceDue: total - returned - advance - paid + refunded,
   };
+}
+
+/**
+ * Each line's share of the bill total, after its own discount and its share
+ * of the bill discount. The bill discount is split in proportion to line
+ * value, with the rounding remainder on the last line, so the shares add up
+ * exactly to the bill total.
+ */
+export function lineShares(lines: BillLineLike[], billDiscountType: string, billDiscountValue: number): number[] {
+  const nets = lines.map(lineTotal);
+  const subtotal = nets.reduce((a, b) => a + b, 0);
+  const discount = discountAmount(subtotal, billDiscountType, billDiscountValue);
+  let allocated = 0;
+  return nets.map((net, i) => {
+    const share =
+      i === nets.length - 1
+        ? discount - allocated
+        : subtotal > 0
+          ? Math.round((discount * net) / subtotal)
+          : 0;
+    allocated += share;
+    return net - share;
+  });
+}
+
+/**
+ * Credit for returning `quantity` more units of a line whose share of the
+ * bill is `lineShare`, when `alreadyReturned` units came back before.
+ *
+ * Worked out as the difference of two running totals, so however a line is
+ * returned - all at once or one unit at a time - the credits add up to
+ * exactly the line's share, with no rounding cent left over.
+ */
+export function returnCredit(
+  lineShare: number,
+  lineQuantity: number,
+  alreadyReturned: number,
+  quantity: number,
+): number {
+  if (lineQuantity <= 0 || quantity <= 0) return 0;
+  const upTo = (n: number) => Math.round((lineShare * n) / lineQuantity);
+  return upTo(alreadyReturned + quantity) - upTo(alreadyReturned);
 }
 
 /**

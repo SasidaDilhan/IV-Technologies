@@ -87,7 +87,7 @@ model SerialUnit {
   serialNumber String @unique
   itemId       Int
 
-  /// "in_stock" | "sold"
+  /// "in_stock" | "sold" | "faulty" (came back on a return, kept out of stock)
   status String @default("in_stock")
 
   /// Reserved against a quote line (quote not yet confirmed).
@@ -100,6 +100,8 @@ model SerialUnit {
   updatedAt DateTime @updatedAt
 
   item Item @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  returnedOn ReturnSerial[]
 
   // A deleted bill line releases its units back to stock; it must never
   // delete the physical-unit record itself.
@@ -256,6 +258,7 @@ model Invoice {
   quotation Quotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull)
   lines     InvoiceLine[]
   payments  Payment[]
+  returns   InvoiceReturn[]
 
   // balanceDue is intentionally NOT a column. It is
   //   lineTotals - billDiscount - advanceAmount - sum(payments)
@@ -296,6 +299,7 @@ model InvoiceLine {
   item    Item    @relation(fields: [itemId], references: [id], onDelete: Restrict)
 
   serialUnits SerialUnit[]
+  returnLines ReturnLine[]
 
   @@index([invoiceId])
   @@index([itemId])
@@ -325,6 +329,87 @@ model Payment {
 
   @@index([invoiceId])
   @@index([paidAt])
+}
+
+// ---------------------------------------------------------------------------
+// Returns
+// ---------------------------------------------------------------------------
+// A customer brings back some or all of an invoice. The invoice is never
+// edited - it stays exactly as issued - and the return is its own record,
+// numbered <invoiceNo>-R1, -R2 ..., with its own printed credit note.
+//
+// These are new tables only. Nothing in the existing tables changes, so the
+// migration is a plain CREATE TABLE on live client data.
+
+model InvoiceReturn {
+  id Int @id @default(autoincrement())
+
+  /// "INV-000012-R1"
+  returnNo  String @unique
+  invoiceId Int
+
+  returnDate DateTime
+  reason     String?
+
+  /// Cents taken off what the customer owes for the goods brought back -
+  /// their share of the invoice total, after line and bill discounts.
+  creditAmount Int
+
+  /// Cents paid back to the customer with this return. 0 when the credit
+  /// only reduces an unpaid balance.
+  refundAmount    Int     @default(0)
+  /// "cash" | "card" | "bank_transfer" | "cheque"
+  refundMethod    String?
+  refundReference String?
+
+  createdAt DateTime @default(now())
+
+  invoice Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  lines   ReturnLine[]
+
+  @@index([invoiceId])
+  @@index([returnDate])
+}
+
+model ReturnLine {
+  id            Int @id @default(autoincrement())
+  returnId      Int
+  invoiceLineId Int
+
+  quantity     Int
+  /// Cents credited for this line - see InvoiceReturn.creditAmount.
+  creditAmount Int
+  /// Buying price snapshot from the invoice line, so returned cost can be
+  /// taken back out of the profit figures.
+  costPrice    Int @default(0)
+
+  /// true: the goods went back on the shelf and can be sold again.
+  /// false: faulty - kept out of stock, so their cost stays a loss.
+  restock Boolean @default(true)
+
+  return      InvoiceReturn  @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  invoiceLine InvoiceLine    @relation(fields: [invoiceLineId], references: [id], onDelete: Restrict)
+  serials     ReturnSerial[]
+
+  @@index([returnId])
+  @@index([invoiceLineId])
+}
+
+/// Which physical units came back on a return. The unit itself is released
+/// from the invoice line, so this is the lasting record that it was sold and
+/// returned.
+model ReturnSerial {
+  id           Int    @id @default(autoincrement())
+  returnLineId Int
+  serialUnitId Int
+  /// Snapshot, so the record reads correctly whatever happens to the unit.
+  serialNumber String
+
+  returnLine ReturnLine @relation(fields: [returnLineId], references: [id], onDelete: Cascade)
+  serialUnit SerialUnit @relation(fields: [serialUnitId], references: [id], onDelete: Restrict)
+
+  @@index([returnLineId])
+  @@index([serialUnitId])
 }
 
 // ---------------------------------------------------------------------------

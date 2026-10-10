@@ -12,6 +12,12 @@ import {
   type ConvertResult,
   type PaymentInput,
 } from "@/lib/invoices";
+import {
+  createReturn,
+  undoReturn,
+  type ReturnInput,
+  type ReturnResult,
+} from "@/lib/returns";
 
 /** Thin wrappers: the real work lives in lib/invoices so it stays testable. */
 
@@ -60,5 +66,28 @@ export async function reviseInvoiceAction(
     revalidatePath("/items");
     revalidatePath("/stock");
   }
+  return result;
+}
+
+function revalidateAfterReturn(invoiceId: number) {
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/items");
+  revalidatePath("/stock");
+  revalidatePath("/dashboard");
+  revalidatePath("/customers");
+}
+
+/** Record goods brought back against an invoice (see lib/returns). */
+export async function createReturnAction(input: ReturnInput): Promise<ReturnResult> {
+  const result = await createReturn(input);
+  if (result.ok) revalidateAfterReturn(input.invoiceId);
+  return result;
+}
+
+/** Undo the latest return on an invoice, entered by mistake. */
+export async function undoReturnAction(returnId: number, invoiceId: number) {
+  const result = await undoReturn(returnId);
+  if (result.ok) revalidateAfterReturn(invoiceId);
   return result;
 }
